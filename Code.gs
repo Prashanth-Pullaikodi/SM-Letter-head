@@ -29,24 +29,29 @@
 //    You can mix all kinds freely. The KEY (e.g. 'official') must match the dropdown value.
 //    Both Doc and Slides templates must contain {RECIPIENT_DATA} and {LETTER_BODY} as text.
 const TEMPLATES = {
-  'official': {
-    label: 'Official Corporate',
+  'General': {
+    label: 'Official Corporate Letterhead',
+    type: 'slides',
+    slidesId: '1Ux5sBKlJ-sLaHPgnaH953SJ1RH6ReOSylLEQFKpGeMc'   // Google Slides ID
+  },
+  'Proposal': {
+    label: 'Room_Booking_Events_Proposal',
     type: 'doc',
-    docId: '1cibOjVGWxfG7rE0eXoaupNy3bwYE8FlOji400Xf5pus'   // <-- your Google Doc ID
+    docId: '1B-VJIgQqB9usg-8E_OQRw3Gdu5cvjJ7N'   // NOTE: must be a NATIVE Google Doc, not a .docx
   },
   'marketing': {
     label: 'Marketing / Pitch',
     type: 'builtin',
-    companyName: 'SM CORPORATION',
-    tagline: 'Innovate. Pitch. Win.',
+    companyName: 'SandalMist Resort & Spa',
+    tagline: 'The Hill Top habitat',
     color: '#c8a04a',
-    footer: 'SM Corporation   |   www.smcorp.com   |   hello@smcorp.com'
+    footer: 'SandalMist Resort & Spa   |   www.sandalmistresort.com   |   info@sandalmistresort.com'
   },
   'memo': {
     label: 'Internal Memo',
     type: 'builtin',
-    companyName: 'INTERNAL MEMORANDUM',
-    tagline: 'SM Corporation',
+    companyName: 'SandalMist Resort & Spa',
+    tagline: 'The Hill Top habitat',
     color: '#1a237e',
     footer: 'Confidential - Internal Use Only'
   }

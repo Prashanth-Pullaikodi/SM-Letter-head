@@ -347,7 +347,8 @@ function applyFieldsToDoc_(body, fields) {
 function applyFieldsToSlides_(pres, fields) {
   FIELDS.forEach(function (f) {
     var val = String(fields[f.tag] == null ? '' : fields[f.tag]);
-    if (f.type === 'rich') val = stripHtml_(val);
+    // Rich field: convert HTML to text but KEEP line breaks/paragraphs (Slides honors \n).
+    if (f.type === 'rich') val = htmlToText_(val);
     pres.replaceAllText('{' + f.tag + '}', val);
   });
 }
@@ -702,6 +703,27 @@ function htmlToXhtml_(html) {
 
 function stripHtml_(html) {
   return decodeEntities_(String(html).replace(/<[^>]*>/g, ' '));
+}
+
+/**
+ * Converts editor HTML to plain text but PRESERVES structure as line breaks:
+ * <br> and the END of block elements (</p>, </div>, </li>, headings) become newlines;
+ * list items get a bullet prefix. Used for Slides bodies so paragraphs don't collapse.
+ */
+function htmlToText_(html) {
+  var s = String(html);
+  s = s.replace(/<!--[\s\S]*?-->/g, '');
+  s = s.replace(/<\s*br\s*\/?\s*>/gi, '\n');               // line breaks
+  s = s.replace(/<\s*li[^>]*>/gi, '• ');              // bullet prefix
+  s = s.replace(/<\/\s*(p|div|li|h[1-6]|tr|ul|ol|blockquote)\s*>/gi, '\n'); // end of blocks
+  s = s.replace(/<[^>]+>/g, '');                            // strip any remaining tags
+  s = decodeEntities_(s);
+  s = s.replace(/\r/g, '');
+  s = s.replace(/[ \t]+\n/g, '\n');                         // trim trailing spaces on lines
+  s = s.replace(/\n[ \t]+/g, '\n');                         // trim leading spaces on lines
+  s = s.replace(/[ \t]{2,}/g, ' ');                         // collapse runs of spaces
+  s = s.replace(/\n{3,}/g, '\n\n');                         // cap blank lines
+  return s.replace(/^\n+|\n+$/g, '');                       // trim leading/trailing newlines
 }
 
 function decodeEntities_(s) {

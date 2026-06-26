@@ -65,6 +65,29 @@ const TEMPLATE_ROLE_RESTRICTIONS = {
 };
 
 
+/**
+ * RUN THIS ONCE to grant all permissions (Docs + Slides + Sheets + Drive) in a single consent.
+ * Because Apps Script authorizes lazily (only the scopes the run function uses), running setup()
+ * never asks for Slides. This function actively touches every service, so running it forces the
+ * full authorization prompt — including "Google Slides presentations". Click Allow, then redeploy.
+ */
+function authorizeAll() {
+  // Sheets + Drive scopes
+  SpreadsheetApp.getActiveSpreadsheet();
+  DriveApp.getRootFolder().getName();
+
+  // Docs scope (create a temp doc, then delete it)
+  var tmpDoc = DocumentApp.create('TEMP_auth_check');
+  DriveApp.getFileById(tmpDoc.getId()).setTrashed(true);
+
+  // Slides scope — actively call SlidesApp so the "presentations" permission is requested.
+  var tmpSlides = SlidesApp.create('TEMP_auth_check');
+  DriveApp.getFileById(tmpSlides.getId()).setTrashed(true);
+
+  Logger.log('authorizeAll complete. All scopes granted. Now Deploy > New version.');
+}
+
+
 /* ============================================================================================
  *  WEB APP ENTRY POINT
  * ============================================================================================ */

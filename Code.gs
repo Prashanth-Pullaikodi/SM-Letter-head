@@ -9,7 +9,7 @@
  *   3. RBAC               -> every protected call is gated by the "Users" sheet (Name/Email/Role).
  *   4. setup()            -> one-time bootstrap that creates the "Users" sheet + sample data.
  *
- * >>> STEP 1: Paste your real Google Doc template IDs in TEMPLATE_IDS below.
+ * >>> STEP 1: Configure your templates in TEMPLATES below (Doc-based or built-in-code).
  * >>> STEP 2: Run setup() once from the editor, authorise the scopes, then add real users.
  * >>> STEP 3: Deploy > New deployment > Web app (Execute as: Me, Access: Anyone in your org).
  *************************************************************************************************/
@@ -20,17 +20,33 @@
 
 // 1) Paste each template's Google Doc ID here. The KEY must match the dropdown value in Index.html.
 //    The ID is the long string in the Doc URL: docs.google.com/document/d/<<<THIS_PART>>>/edit
-const TEMPLATE_IDS = {
-  'official': 'PASTE_OFFICIAL_CORPORATE_DOC_ID_HERE',   // "Official Corporate"
-  'marketing': 'PASTE_MARKETING_PITCH_DOC_ID_HERE',     // "Marketing / Pitch"
-  'memo': 'PASTE_INTERNAL_MEMO_DOC_ID_HERE'             // "Internal Memo"
-};
-
-// 2) Friendly labels (used only for logging / nice messages).
-const TEMPLATE_LABELS = {
-  'official': 'Official Corporate',
-  'marketing': 'Marketing / Pitch',
-  'memo': 'Internal Memo'
+//    Each template is EITHER:
+//      type:'doc'     -> uses a Google Doc you designed; set its docId.
+//      type:'builtin' -> the letterhead is built in code (no Doc needed); set companyName,
+//                        tagline, color (brand hex), and footer.
+//    You can mix both kinds freely. The KEY (e.g. 'official') must match the dropdown value.
+const TEMPLATES = {
+  'official': {
+    label: 'Official Corporate',
+    type: 'doc',
+    docId: '1cibOjVGWxfG7rE0eXoaupNy3bwYE8FlOji400Xf5pus'   // <-- your Google Doc ID
+  },
+  'marketing': {
+    label: 'Marketing / Pitch',
+    type: 'builtin',
+    companyName: 'SM CORPORATION',
+    tagline: 'Innovate. Pitch. Win.',
+    color: '#c8a04a',
+    footer: 'SM Corporation   |   www.smcorp.com   |   hello@smcorp.com'
+  },
+  'memo': {
+    label: 'Internal Memo',
+    type: 'builtin',
+    companyName: 'INTERNAL MEMORANDUM',
+    tagline: 'SM Corporation',
+    color: '#1a237e',
+    footer: 'Confidential - Internal Use Only'
+  }
 };
 
 // 3) Name of the sheet that stores the RBAC user list.
@@ -159,9 +175,9 @@ function getSessionInfo() {
     };
   }
   var allowed = [];
-  Object.keys(TEMPLATE_LABELS).forEach(function (key) {
+  Object.keys(TEMPLATES).forEach(function (key) {
     if (roleCanUseTemplate_(user.role, key)) {
-      allowed.push({ key: key, label: TEMPLATE_LABELS[key] });
+      allowed.push({ key: key, label: TEMPLATES[key].label });
     }
   });
   return {
@@ -206,44 +222,26 @@ function generateLetter(formData) {
       return { ok: false, error: 'Your role (' + user.role + ') may not use this template.' };
     }
 
-    var templateId = TEMPLATE_IDS[templateKey];
-    if (!templateId || templateId.indexOf('PASTE_') === 0) {
-      return { ok: false, error: 'Template "' + templateKey + '" is not configured. Set its Doc ID in Code.gs.' };
+    var tpl = TEMPLATES[templateKey];
+    if (!tpl) {
+      return { ok: false, error: 'Template "' + templateKey + '" is not configured in Code.gs.' };
     }
 
-    // ---- 3. COPY THE TEMPLATE -------------------------------------------------------------
-    var templateFile = DriveApp.getFileById(templateId);
-    var tempName = 'TEMP_Letter_' + user.email + '_' + Date.now();
-    var copy = templateFile.makeCopy(tempName);
-    var copyId = copy.getId();
-
+    // ---- 3. RENDER THE PDF (dispatch by template type) ------------------------------------
     var pdfBlob;
-    try {
-      // ---- 4. OPEN & REPLACE PLACEHOLDERS -------------------------------------------------
-      var doc = DocumentApp.openById(copyId);
-      var body = doc.getBody();
-
-      // Recipient is plain multi-line text -> Text Finder handles it directly.
-      body.replaceText('\\{RECIPIENT_DATA\\}', escapeForReplace_(recipient));
-
-      // Letter body may contain rich formatting -> insert it as styled Doc content.
-      insertRichBody_(body, '{LETTER_BODY}', bodyHtml);
-
-      doc.saveAndClose();
-
-      // ---- 5. EXPORT TO PDF ---------------------------------------------------------------
-      pdfBlob = DriveApp.getFileById(copyId)
-        .getAs('application/pdf')
-        .setName('Generated_Letterhead.pdf');
-    } finally {
-      // ---- 6. ALWAYS DELETE THE TEMP COPY (keeps Drive clean, even on error) --------------
-      try { DriveApp.getFileById(copyId).setTrashed(true); } catch (cleanupErr) {}
+    if (tpl.type === 'doc') {
+      if (!tpl.docId || tpl.docId.indexOf('PASTE_') === 0) {
+        return { ok: false, error: 'Template "' + tpl.label + '" has no Doc ID set in Code.gs.' };
+      }
+      pdfBlob = renderFromDocTemplate_(tpl.docId, recipient, bodyHtml, user);
+    } else {
+      pdfBlob = renderFromBuiltinTemplate_(tpl, recipient, bodyHtml);
     }
 
-    // ---- 7. LOG (audit trail) -------------------------------------------------------------
+    // ---- 4. LOG (audit trail) -------------------------------------------------------------
     logGeneration_(user, templateKey);
 
-    // ---- 8. RETURN AS BASE64 --------------------------------------------------------------
+    // ---- 5. RETURN AS BASE64 --------------------------------------------------------------
     return {
       ok: true,
       fileName: 'Generated_Letterhead.pdf',
@@ -252,6 +250,75 @@ function generateLetter(formData) {
 
   } catch (err) {
     return { ok: false, error: 'Server error: ' + (err && err.message ? err.message : err) };
+  }
+}
+
+/**
+ * DOC TEMPLATE: copy the Doc, replace {RECIPIENT_DATA} and {LETTER_BODY}, export PDF, delete copy.
+ */
+function renderFromDocTemplate_(docId, recipient, bodyHtml, user) {
+  var copy = DriveApp.getFileById(docId).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
+  var copyId = copy.getId();
+  try {
+    var doc = DocumentApp.openById(copyId);
+    var body = doc.getBody();
+    body.replaceText('\\{RECIPIENT_DATA\\}', escapeForReplace_(recipient));
+    insertRichBody_(body, '{LETTER_BODY}', bodyHtml);
+    doc.saveAndClose();
+    return DriveApp.getFileById(copyId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
+  } finally {
+    try { DriveApp.getFileById(copyId).setTrashed(true); } catch (e) {}
+  }
+}
+
+/**
+ * BUILT-IN TEMPLATE: build a branded letterhead entirely in code (no Doc to maintain), then
+ * export to PDF and delete the temporary doc. Header = company name + tagline in the brand color;
+ * footer = your footer line; body = date, recipient block, then the rich letter content.
+ */
+function renderFromBuiltinTemplate_(tpl, recipient, bodyHtml) {
+  var doc = DocumentApp.create('TEMP_Letter_' + Date.now());
+  var docId = doc.getId();
+  try {
+    var color = tpl.color || '#1a237e';
+    var body = doc.getBody();
+    body.setMarginTop(56).setMarginBottom(56).setMarginLeft(64).setMarginRight(64);
+
+    // --- Header (repeats on every page) ---
+    var header = doc.addHeader();
+    header.appendParagraph(tpl.companyName || 'SM CORPORATION')
+      .setForegroundColor(color).setBold(true).setFontSize(20);
+    if (tpl.tagline) {
+      header.appendParagraph(tpl.tagline).setForegroundColor('#777777').setFontSize(9).setBold(false);
+    }
+    // a colored divider rule under the header
+    header.appendHorizontalRule();
+
+    // --- Footer ---
+    if (tpl.footer) {
+      doc.addFooter().appendParagraph(tpl.footer)
+        .setForegroundColor('#888888').setFontSize(8)
+        .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    }
+
+    // --- Body: date, recipient, then rich content ---
+    body.appendParagraph(
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MMMM d, yyyy'))
+      .setAlignment(DocumentApp.HorizontalAlignment.RIGHT).setForegroundColor('#444444');
+
+    String(recipient).split('\n').forEach(function (line) {
+      body.appendParagraph(line).setForegroundColor('#000000');
+    });
+    body.appendParagraph('');
+
+    // Rich letter body is inserted at this placeholder, which is then removed.
+    body.appendParagraph('{LETTER_BODY}');
+    insertRichBody_(body, '{LETTER_BODY}', bodyHtml);
+
+    doc.saveAndClose();
+    return DriveApp.getFileById(docId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
+  } finally {
+    try { DriveApp.getFileById(docId).setTrashed(true); } catch (e) {}
   }
 }
 
@@ -568,7 +635,8 @@ function logGeneration_(user, templateKey) {
       log.appendRow(['Timestamp', 'Name', 'Email', 'Role', 'Template']);
       log.getRange(1, 1, 1, 5).setFontWeight('bold');
     }
-    log.appendRow([new Date(), user.name, user.email, user.role, TEMPLATE_LABELS[templateKey] || templateKey]);
+    var label = (TEMPLATES[templateKey] && TEMPLATES[templateKey].label) || templateKey;
+    log.appendRow([new Date(), user.name, user.email, user.role, label]);
   } catch (e) { /* logging must never break generation */ }
 }
 

@@ -64,6 +64,24 @@ const TEMPLATE_ROLE_RESTRICTIONS = {
   // 'memo': ['Admin', 'Manager']   // e.g. only Admins/Managers may issue Internal Memos
 };
 
+// 6) FORM FIELDS -> template placeholders.
+//    Each field's `tag` becomes the placeholder {TAG} you put in your Doc/Slides template box.
+//    The web form builds an input for every field automatically. Add/remove to match your boxes.
+//    type: 'text' (single line) | 'textarea' (multi-line) | 'rich' (the styled editor; use ONE).
+//    e.g. put {RECIPIENT_NAME} in the name box, {RECIPIENT_ADDRESS} in the address box, etc.
+const FIELDS = [
+  { tag: 'RECIPIENT_NAME',    label: 'Recipient Name',     type: 'text',     required: true  },
+  { tag: 'RECIPIENT_COMPANY', label: 'Recipient Company',  type: 'text',     required: false },
+  { tag: 'RECIPIENT_ADDRESS', label: 'Recipient Address',  type: 'textarea', required: false },
+  { tag: 'SUBJECT',           label: 'Subject',            type: 'text',     required: false },
+  { tag: 'LETTER_BODY',       label: 'Letter Content',     type: 'rich',     required: true  }
+];
+
+function fieldDef_(tag) {
+  for (var i = 0; i < FIELDS.length; i++) if (FIELDS[i].tag === tag) return FIELDS[i];
+  return null;
+}
+
 
 /**
  * RUN THIS ONCE to grant all permissions (Docs + Slides + Sheets + Drive) in a single consent.
@@ -211,7 +229,8 @@ function getSessionInfo() {
     name: user.name,
     email: user.email,
     role: user.role,
-    templates: allowed
+    templates: allowed,
+    fields: FIELDS
   };
 }
 
@@ -236,13 +255,20 @@ function generateLetter(formData) {
     // ---- 2. VALIDATE INPUT ----------------------------------------------------------------
     formData = formData || {};
     var templateKey = String(formData.template || '').trim();
-    var recipient = String(formData.recipient || '').trim();
-    var bodyHtml = String(formData.bodyHtml || '').trim();
+    var fields = formData.fields || {};
 
     if (!templateKey) return { ok: false, error: 'Please select a template.' };
-    if (!recipient)   return { ok: false, error: 'Recipient information is required.' };
-    if (!bodyHtml || stripHtml_(bodyHtml).trim() === '') {
-      return { ok: false, error: 'Letter content cannot be empty.' };
+
+    // Validate required fields (rich fields are checked by their stripped text).
+    var missing = [];
+    FIELDS.forEach(function (f) {
+      if (!f.required) return;
+      var raw = String(fields[f.tag] || '');
+      var text = (f.type === 'rich') ? stripHtml_(raw).trim() : raw.trim();
+      if (!text) missing.push(f.label);
+    });
+    if (missing.length) {
+      return { ok: false, error: 'Please fill in: ' + missing.join(', ') + '.' };
     }
     if (!roleCanUseTemplate_(user.role, templateKey)) {
       return { ok: false, error: 'Your role (' + user.role + ') may not use this template.' };
@@ -259,14 +285,14 @@ function generateLetter(formData) {
       if (!tpl.docId || tpl.docId.indexOf('PASTE_') === 0) {
         return { ok: false, error: 'Template "' + tpl.label + '" has no Doc ID set in Code.gs.' };
       }
-      pdfBlob = renderFromDocTemplate_(tpl.docId, recipient, bodyHtml, user, tpl.label);
+      pdfBlob = renderFromDocTemplate_(tpl.docId, fields, user, tpl.label);
     } else if (tpl.type === 'slides') {
       if (!tpl.slidesId || tpl.slidesId.indexOf('PASTE_') === 0) {
         return { ok: false, error: 'Template "' + tpl.label + '" has no Slides ID set in Code.gs.' };
       }
-      pdfBlob = renderFromSlidesTemplate_(tpl.slidesId, recipient, bodyHtml, user, tpl.label);
+      pdfBlob = renderFromSlidesTemplate_(tpl.slidesId, fields, user, tpl.label);
     } else {
-      pdfBlob = renderFromBuiltinTemplate_(tpl, recipient, bodyHtml);
+      pdfBlob = renderFromBuiltinTemplate_(tpl, fields);
     }
 
     // ---- 4. LOG (audit trail) -------------------------------------------------------------
@@ -299,16 +325,42 @@ function getTemplateFile_(fileId, label) {
 }
 
 /**
- * DOC TEMPLATE: copy the Doc, replace {RECIPIENT_DATA} and {LETTER_BODY}, export PDF, delete copy.
+ * Replaces every {TAG} placeholder in a Google Doc body with its field value. Rich fields are
+ * inserted with formatting; all other fields are replaced as plain text. Empty fields clear the
+ * placeholder so no stray {TAG} is left behind.
  */
-function renderFromDocTemplate_(docId, recipient, bodyHtml, user, label) {
+function applyFieldsToDoc_(body, fields) {
+  FIELDS.forEach(function (f) {
+    var val = String(fields[f.tag] == null ? '' : fields[f.tag]);
+    if (f.type === 'rich') {
+      insertRichBody_(body, '{' + f.tag + '}', val);
+    } else {
+      body.replaceText('\\{' + f.tag + '\\}', escapeForReplace_(val));
+    }
+  });
+}
+
+/**
+ * Replaces every {TAG} in a Slides deck with its field value (plain text only — Slides can't
+ * take rich formatting, so rich fields are flattened to text).
+ */
+function applyFieldsToSlides_(pres, fields) {
+  FIELDS.forEach(function (f) {
+    var val = String(fields[f.tag] == null ? '' : fields[f.tag]);
+    if (f.type === 'rich') val = stripHtml_(val);
+    pres.replaceAllText('{' + f.tag + '}', val);
+  });
+}
+
+/**
+ * DOC TEMPLATE: copy the Doc, replace all {TAG} placeholders, export PDF, delete copy.
+ */
+function renderFromDocTemplate_(docId, fields, user, label) {
   var copy = getTemplateFile_(docId, label).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
   var copyId = copy.getId();
   try {
     var doc = DocumentApp.openById(copyId);
-    var body = doc.getBody();
-    body.replaceText('\\{RECIPIENT_DATA\\}', escapeForReplace_(recipient));
-    insertRichBody_(body, '{LETTER_BODY}', bodyHtml);
+    applyFieldsToDoc_(doc.getBody(), fields);
     doc.saveAndClose();
     return DriveApp.getFileById(copyId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
   } finally {
@@ -317,11 +369,27 @@ function renderFromDocTemplate_(docId, recipient, bodyHtml, user, label) {
 }
 
 /**
- * BUILT-IN TEMPLATE: build a branded letterhead entirely in code (no Doc to maintain), then
- * export to PDF and delete the temporary doc. Header = company name + tagline in the brand color;
- * footer = your footer line; body = date, recipient block, then the rich letter content.
+ * SLIDES TEMPLATE: copy the deck, replace all {TAG} placeholders (plain text), export PDF, delete.
  */
-function renderFromBuiltinTemplate_(tpl, recipient, bodyHtml) {
+function renderFromSlidesTemplate_(slidesId, fields, user, label) {
+  var copy = getTemplateFile_(slidesId, label).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
+  var copyId = copy.getId();
+  try {
+    var pres = SlidesApp.openById(copyId);
+    applyFieldsToSlides_(pres, fields);
+    pres.saveAndClose();
+    return DriveApp.getFileById(copyId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
+  } finally {
+    try { DriveApp.getFileById(copyId).setTrashed(true); } catch (e) {}
+  }
+}
+
+/**
+ * BUILT-IN TEMPLATE: build a branded letterhead entirely in code (no file to maintain). The
+ * recipient block is composed from all non-rich fields (in order), and the rich field becomes
+ * the letter body.
+ */
+function renderFromBuiltinTemplate_(tpl, fields) {
   var doc = DocumentApp.create('TEMP_Letter_' + Date.now());
   var docId = doc.getId();
   try {
@@ -336,7 +404,6 @@ function renderFromBuiltinTemplate_(tpl, recipient, bodyHtml) {
     if (tpl.tagline) {
       header.appendParagraph(tpl.tagline).setForegroundColor('#777777').setFontSize(9).setBold(false);
     }
-    // a colored divider rule under the header
     header.appendHorizontalRule();
 
     // --- Footer ---
@@ -346,13 +413,19 @@ function renderFromBuiltinTemplate_(tpl, recipient, bodyHtml) {
         .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
     }
 
-    // --- Body: date, recipient, then rich content ---
+    // --- Body: date, recipient block (non-rich fields), then rich content ---
     body.appendParagraph(
       Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MMMM d, yyyy'))
       .setAlignment(DocumentApp.HorizontalAlignment.RIGHT).setForegroundColor('#444444');
 
-    String(recipient).split('\n').forEach(function (line) {
-      body.appendParagraph(line).setForegroundColor('#000000');
+    var bodyHtml = '';
+    FIELDS.forEach(function (f) {
+      var val = String(fields[f.tag] == null ? '' : fields[f.tag]);
+      if (f.type === 'rich') { bodyHtml = val; return; }
+      if (!val.trim()) return;
+      val.split('\n').forEach(function (line) {
+        body.appendParagraph(line).setForegroundColor('#000000');
+      });
     });
     body.appendParagraph('');
 
@@ -364,26 +437,6 @@ function renderFromBuiltinTemplate_(tpl, recipient, bodyHtml) {
     return DriveApp.getFileById(docId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
   } finally {
     try { DriveApp.getFileById(docId).setTrashed(true); } catch (e) {}
-  }
-}
-
-/**
- * SLIDES TEMPLATE: for a Google Slides letterhead (e.g. an imported .pptx design). Copies the
- * presentation, replaces {RECIPIENT_DATA} and {LETTER_BODY} text, exports to PDF, deletes copy.
- * NOTE: Slides replaceAllText is PLAIN text only — rich formatting from the editor (colors,
- * fonts) is not carried into a Slides template; the body inherits the placeholder's own style.
- */
-function renderFromSlidesTemplate_(slidesId, recipient, bodyHtml, user, label) {
-  var copy = getTemplateFile_(slidesId, label).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
-  var copyId = copy.getId();
-  try {
-    var pres = SlidesApp.openById(copyId);
-    pres.replaceAllText('{RECIPIENT_DATA}', recipient);
-    pres.replaceAllText('{LETTER_BODY}', stripHtml_(bodyHtml));
-    pres.saveAndClose();
-    return DriveApp.getFileById(copyId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
-  } finally {
-    try { DriveApp.getFileById(copyId).setTrashed(true); } catch (e) {}
   }
 }
 

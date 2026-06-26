@@ -38,6 +38,7 @@
     .card h2 { margin:0 0 4px; font-size:1.05rem; }
     .card .sub { color:var(--muted); font-size:.82rem; margin:0 0 18px; }
     label { display:block; font-weight:600; font-size:.85rem; margin:0 0 6px; }
+    .req { color:var(--danger); }
     .field { margin-bottom:20px; }
     select, textarea, input {
       width:100%; padding:12px 14px; font-size:.92rem; border:1px solid var(--border);
@@ -45,7 +46,7 @@
       transition:border .15s, box-shadow .15s; }
     select:focus, textarea:focus, input:focus {
       outline:none; border-color:var(--brand-light); box-shadow:0 0 0 3px rgba(57,73,171,.15); }
-    textarea { resize:vertical; min-height:110px; line-height:1.5; }
+    textarea { resize:vertical; min-height:80px; line-height:1.5; }
     .editor-wrap { border:1px solid var(--border); border-radius:10px; overflow:hidden; background:#fff; }
     .toolbar { display:flex; flex-wrap:wrap; gap:4px; align-items:center; padding:8px;
       background:#f3f5fb; border-bottom:1px solid var(--border); }
@@ -58,7 +59,7 @@
     .toolbar input[type=color] { width:32px; height:32px; padding:2px; border-radius:7px;
       cursor:pointer; border:1px solid var(--border); }
     .toolbar .divider { width:1px; height:22px; background:var(--border); margin:0 4px; }
-    .editor { min-height:240px; max-height:460px; overflow-y:auto; padding:16px 18px;
+    .editor { min-height:200px; max-height:420px; overflow-y:auto; padding:16px 18px;
       font-size:.95rem; line-height:1.6; outline:none; }
     .editor:empty:before { content:attr(data-placeholder); color:#9aa3b2; }
     .btn { width:100%; border:none; cursor:pointer; color:#fff; font-weight:700; font-size:.98rem;
@@ -78,7 +79,7 @@
     .alert.success { background:#e9f6ec; color:var(--success); border:1px solid #b6e0bf; }
     .field-error { color:var(--danger); font-size:.78rem; margin-top:6px; display:none; }
     .field-error.show { display:block; }
-    .invalid select, .invalid textarea, .invalid .editor-wrap { border-color:var(--danger) !important; }
+    .invalid select, .invalid textarea, .invalid input, .invalid .editor-wrap { border-color:var(--danger) !important; }
     .tips { font-size:.82rem; color:var(--muted); line-height:1.7; }
     .tips code { background:#eef1f8; padding:1px 6px; border-radius:5px; color:var(--brand); font-size:.8rem; }
     .gate { text-align:center; padding:60px 20px; color:var(--muted); }
@@ -114,66 +115,15 @@
         <p class="sub">Fill in the details below, then generate your branded PDF.</p>
 
         <div class="field" id="f-template">
-          <label for="template">Letterhead Template</label>
+          <label for="template">Letterhead Template <span class="req">*</span></label>
           <select id="template">
             <option value="">-- Select a purpose --</option>
           </select>
           <div class="field-error" id="e-template">Please choose a template.</div>
         </div>
 
-        <div class="field" id="f-recipient">
-          <label for="recipient">Recipient Information</label>
-          <textarea id="recipient" placeholder="Recipient Name&#10;Company Name&#10;Street Address&#10;City, State, ZIP"></textarea>
-          <div class="field-error" id="e-recipient">Recipient information is required.</div>
-        </div>
-
-        <div class="field" id="f-body">
-          <label>Letter Content</label>
-          <div class="editor-wrap">
-            <div class="toolbar" id="toolbar">
-              <select id="fontName" title="Font">
-                <option value="">Font</option>
-                <option value="Arial">Arial</option>
-                <option value="Georgia">Georgia</option>
-                <option value="Times New Roman">Times New Roman</option>
-                <option value="Verdana">Verdana</option>
-                <option value="Courier New">Courier New</option>
-                <option value="Tahoma">Tahoma</option>
-              </select>
-              <select id="fontSize" title="Size">
-                <option value="">Size</option>
-                <option value="2">Small</option>
-                <option value="3" selected>Normal</option>
-                <option value="5">Large</option>
-                <option value="6">X-Large</option>
-                <option value="7">Heading</option>
-              </select>
-              <span class="divider"></span>
-              <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
-              <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
-              <button type="button" data-cmd="underline" title="Underline"><u>U</u></button>
-              <span class="divider"></span>
-              <button type="button" data-cmd="justifyLeft" title="Align left">L</button>
-              <button type="button" data-cmd="justifyCenter" title="Align center">C</button>
-              <button type="button" data-cmd="justifyRight" title="Align right">R</button>
-              <span class="divider"></span>
-              <button type="button" data-cmd="insertUnorderedList" title="Bullet list">List</button>
-              <button type="button" data-cmd="insertOrderedList" title="Numbered list">1.</button>
-              <span class="divider"></span>
-              <label title="Text color" style="margin:0;display:flex;align-items:center">
-                <input type="color" id="foreColor" value="#1a237e">
-              </label>
-              <label title="Highlight" style="margin:0;display:flex;align-items:center">
-                <input type="color" id="hiliteColor" value="#ffff00">
-              </label>
-              <span class="divider"></span>
-              <button type="button" data-cmd="removeFormat" title="Clear formatting">Clear</button>
-            </div>
-            <div class="editor" id="editor" contenteditable="true"
-                 data-placeholder="Type the body of your letter here. Use the toolbar to style fonts, colors and alignment..."></div>
-          </div>
-          <div class="field-error" id="e-body">Letter content cannot be empty.</div>
-        </div>
+        <!-- Dynamic fields render here, built from the backend FIELDS config -->
+        <div id="fields"></div>
 
         <button class="btn" id="generateBtn">
           <span id="btnSpinner" class="spinner" style="display:none"></span>
@@ -187,12 +137,12 @@
         <h2>How it works</h2>
         <p class="sub">A quick guide to a perfect letter.</p>
         <div class="tips">
-          <p><strong>1. Pick a template</strong><br>Each template maps to a branded letterhead for a specific purpose.</p>
-          <p><strong>2. Add recipient details</strong><br>These replace the <code>{RECIPIENT_DATA}</code> tag.</p>
-          <p><strong>3. Write and style your content</strong><br>Rich text is carried into the <code>{LETTER_BODY}</code> section.</p>
-          <p><strong>4. Generate</strong><br>We build the document, export a clean PDF, and download it as <code>Generated_Letterhead.pdf</code>.</p>
+          <p><strong>1. Pick a template</strong><br>Each maps to a branded letterhead for a specific purpose.</p>
+          <p><strong>2. Fill the fields</strong><br>Each field replaces its <code>{TAG}</code> placeholder in the letterhead (e.g. <code>{RECIPIENT_NAME}</code>, <code>{RECIPIENT_ADDRESS}</code>).</p>
+          <p><strong>3. Write the content</strong><br>The styled editor fills the <code>{LETTER_BODY}</code> area.</p>
+          <p><strong>4. Generate</strong><br>Downloads instantly as <code>Generated_Letterhead.pdf</code>.</p>
           <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
-          <p style="color:var(--muted)">Access is role-restricted. Your activity is logged for compliance.</p>
+          <p style="color:var(--muted)">Access is role-restricted. Activity is logged for compliance.</p>
         </div>
       </div>
     </div>
@@ -201,23 +151,53 @@
   </div>
 
   <script>
-    // All logic runs after the DOM is parsed and the HtmlService bridge is ready.
     document.addEventListener('DOMContentLoaded', function () {
 
-      var editor, btn, btnLabel, btnSpinner;
+      var FIELDS = [];      // field definitions from the backend
+      var editor = null;    // the rich-text editor element (if a rich field exists)
+      var btn, btnLabel, btnSpinner;
 
       function $(id) { return document.getElementById(id); }
-
       function escapeHtml(s) {
         return String(s).replace(/[&<>"']/g, function (c) {
           return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c];
         });
       }
 
+      var TOOLBAR_HTML =
+        '<div class="toolbar">' +
+          '<select data-tool="fontName" title="Font">' +
+            '<option value="">Font</option><option>Arial</option><option>Georgia</option>' +
+            '<option value="Times New Roman">Times New Roman</option><option>Verdana</option>' +
+            '<option value="Courier New">Courier New</option><option>Tahoma</option></select>' +
+          '<select data-tool="fontSize" title="Size">' +
+            '<option value="">Size</option><option value="2">Small</option>' +
+            '<option value="3" selected>Normal</option><option value="5">Large</option>' +
+            '<option value="6">X-Large</option><option value="7">Heading</option></select>' +
+          '<span class="divider"></span>' +
+          '<button type="button" data-cmd="bold" title="Bold"><b>B</b></button>' +
+          '<button type="button" data-cmd="italic" title="Italic"><i>I</i></button>' +
+          '<button type="button" data-cmd="underline" title="Underline"><u>U</u></button>' +
+          '<span class="divider"></span>' +
+          '<button type="button" data-cmd="justifyLeft" title="Align left">L</button>' +
+          '<button type="button" data-cmd="justifyCenter" title="Align center">C</button>' +
+          '<button type="button" data-cmd="justifyRight" title="Align right">R</button>' +
+          '<span class="divider"></span>' +
+          '<button type="button" data-cmd="insertUnorderedList" title="Bullet list">List</button>' +
+          '<button type="button" data-cmd="insertOrderedList" title="Numbered list">1.</button>' +
+          '<span class="divider"></span>' +
+          '<label title="Text color" style="margin:0;display:flex;align-items:center">' +
+            '<input type="color" data-tool="foreColor" value="#1a237e"></label>' +
+          '<label title="Highlight" style="margin:0;display:flex;align-items:center">' +
+            '<input type="color" data-tool="hiliteColor" value="#ffff00"></label>' +
+          '<span class="divider"></span>' +
+          '<button type="button" data-cmd="removeFormat" title="Clear">Clear</button>' +
+        '</div>';
+
       /* ---------- RBAC session ---------- */
       function loadSession() {
         if (!window.google || !google.script || !google.script.run) {
-          $('gate').innerHTML = '<div style="color:#d32f2f">This page must be opened from the deployed web app URL.</div>';
+          $('gate').innerHTML = '<div style="color:#d32f2f">Open this from the deployed web app URL.</div>';
           return;
         }
         google.script.run
@@ -248,70 +228,129 @@
           sel.appendChild(o);
         });
 
+        FIELDS = info.fields || [];
+        buildFields(FIELDS);
+
         $('gate').style.display = 'none';
         $('app').style.display = 'grid';
       }
 
-      /* ---------- Rich text toolbar ---------- */
-      function wireToolbar() {
-        var cmdButtons = document.querySelectorAll('#toolbar button[data-cmd]');
-        Array.prototype.forEach.call(cmdButtons, function (b) {
-          b.addEventListener('click', function () {
-            editor.focus();
-            document.execCommand(b.getAttribute('data-cmd'), false, null);
-            refreshToolbarState();
-          });
-        });
-        $('fontName').addEventListener('change', function () {
-          if (this.value) { editor.focus(); document.execCommand('fontName', false, this.value); }
-        });
-        $('fontSize').addEventListener('change', function () {
-          if (this.value) { editor.focus(); document.execCommand('fontSize', false, this.value); }
-        });
-        $('foreColor').addEventListener('input', function () {
-          editor.focus(); document.execCommand('foreColor', false, this.value);
-        });
-        $('hiliteColor').addEventListener('input', function () {
-          editor.focus();
-          if (!document.execCommand('hiliteColor', false, this.value)) {
-            document.execCommand('backColor', false, this.value);
+      /* ---------- build dynamic fields ---------- */
+      function buildFields(fields) {
+        var container = $('fields');
+        container.innerHTML = '';
+        editor = null;
+
+        fields.forEach(function (f) {
+          var wrap = document.createElement('div');
+          wrap.className = 'field';
+          wrap.id = 'f_' + f.tag;
+
+          var lab = document.createElement('label');
+          lab.innerHTML = escapeHtml(f.label) + (f.required ? ' <span class="req">*</span>' : '');
+          wrap.appendChild(lab);
+
+          if (f.type === 'rich') {
+            var ew = document.createElement('div');
+            ew.className = 'editor-wrap';
+            ew.innerHTML = TOOLBAR_HTML +
+              '<div class="editor" id="editor" contenteditable="true" data-placeholder="Type the letter content. Use the toolbar to style it..."></div>';
+            wrap.appendChild(ew);
+          } else if (f.type === 'textarea') {
+            var ta = document.createElement('textarea');
+            ta.id = 'fld_' + f.tag;
+            wrap.appendChild(ta);
+          } else {
+            var inp = document.createElement('input');
+            inp.type = 'text';
+            inp.id = 'fld_' + f.tag;
+            wrap.appendChild(inp);
           }
+
+          var err = document.createElement('div');
+          err.className = 'field-error';
+          err.id = 'e_' + f.tag;
+          err.textContent = f.label + ' is required.';
+          wrap.appendChild(err);
+
+          container.appendChild(wrap);
         });
-        editor.addEventListener('keyup', refreshToolbarState);
-        editor.addEventListener('mouseup', refreshToolbarState);
+
+        editor = $('editor');
+        if (editor) wireToolbar(editor);
       }
 
-      function refreshToolbarState() {
+      /* ---------- rich text toolbar ---------- */
+      function wireToolbar(ed) {
+        var tb = ed.parentNode.querySelector('.toolbar');
+        if (!tb) return;
+        var cmdButtons = tb.querySelectorAll('button[data-cmd]');
+        Array.prototype.forEach.call(cmdButtons, function (b) {
+          b.addEventListener('click', function () {
+            ed.focus();
+            document.execCommand(b.getAttribute('data-cmd'), false, null);
+            refreshState(tb);
+          });
+        });
+        Array.prototype.forEach.call(tb.querySelectorAll('[data-tool]'), function (ctrl) {
+          var tool = ctrl.getAttribute('data-tool');
+          var evt = (ctrl.tagName === 'SELECT') ? 'change' : 'input';
+          ctrl.addEventListener(evt, function () {
+            ed.focus();
+            if (tool === 'hiliteColor') {
+              if (!document.execCommand('hiliteColor', false, ctrl.value)) {
+                document.execCommand('backColor', false, ctrl.value);
+              }
+            } else if (ctrl.value !== '') {
+              document.execCommand(tool, false, ctrl.value);
+            }
+          });
+        });
+        ed.addEventListener('keyup', function () { refreshState(tb); });
+        ed.addEventListener('mouseup', function () { refreshState(tb); });
+      }
+
+      function refreshState(tb) {
         ['bold', 'italic', 'underline'].forEach(function (cmd) {
-          var b = document.querySelector('#toolbar button[data-cmd="' + cmd + '"]');
+          var b = tb.querySelector('button[data-cmd="' + cmd + '"]');
           if (b) { try { b.classList.toggle('active', document.queryCommandState(cmd)); } catch (e) {} }
         });
       }
 
-      /* ---------- Submit ---------- */
+      /* ---------- submit ---------- */
       function submitForm() {
         clearErrors();
         var template = $('template').value.trim();
-        var recipient = $('recipient').value.trim();
-        var bodyHtml = editor.innerHTML.trim();
-        var bodyText = (editor.innerText || editor.textContent || '').trim();
+        var data = {};
+        var firstBad = null;
 
-        var ok = true;
-        if (!template)  { showFieldError('template'); ok = false; }
-        if (!recipient) { showFieldError('recipient'); ok = false; }
-        if (!bodyText)  { showFieldError('body'); ok = false; }
-        if (!ok) { showAlert('error', 'Please fill in all required fields.'); return; }
+        if (!template) { markError('template'); firstBad = firstBad || 'template'; }
+
+        FIELDS.forEach(function (f) {
+          var val, text;
+          if (f.type === 'rich') {
+            val = editor ? editor.innerHTML.trim() : '';
+            text = editor ? (editor.innerText || editor.textContent || '').trim() : '';
+          } else {
+            var el = $('fld_' + f.tag);
+            val = el ? el.value.trim() : '';
+            text = val;
+          }
+          data[f.tag] = val;
+          if (f.required && !text) { markError(f.tag); firstBad = firstBad || f.tag; }
+        });
+
+        if (firstBad) { showAlert('error', 'Please fill in all required fields.'); return; }
 
         setLoading(true);
         hideAlert();
-
         google.script.run
           .withSuccessHandler(onGenerated)
           .withFailureHandler(function (err) {
             setLoading(false);
             showAlert('error', 'Generation failed: ' + (err && err.message ? err.message : err));
           })
-          .generateLetter({ template: template, recipient: recipient, bodyHtml: bodyHtml });
+          .generateLetter({ template: template, fields: data });
       }
 
       function onGenerated(res) {
@@ -347,28 +386,25 @@
         btnSpinner.style.display = loading ? 'block' : 'none';
         btnLabel.textContent = loading ? 'Generating PDF, please wait...' : 'Generate PDF';
       }
-      function showFieldError(key) {
-        $('f-' + key).classList.add('invalid');
-        $('e-' + key).classList.add('show');
+      function markError(key) {
+        var fw = $('f_' + key) || $('f-' + key);
+        var fe = $('e_' + key) || $('e-' + key);
+        if (fw) fw.classList.add('invalid');
+        if (fe) fe.classList.add('show');
       }
       function clearErrors() {
-        ['template', 'recipient', 'body'].forEach(function (k) {
-          $('f-' + k).classList.remove('invalid');
-          $('e-' + k).classList.remove('show');
-        });
+        var bad = document.querySelectorAll('.invalid');
+        Array.prototype.forEach.call(bad, function (n) { n.classList.remove('invalid'); });
+        var errs = document.querySelectorAll('.field-error.show');
+        Array.prototype.forEach.call(errs, function (n) { n.classList.remove('show'); });
       }
-      function showAlert(type, msg) {
-        var a = $('alert'); a.className = 'alert show ' + type; a.textContent = msg;
-      }
+      function showAlert(type, msg) { var a = $('alert'); a.className = 'alert show ' + type; a.textContent = msg; }
       function hideAlert() { $('alert').className = 'alert'; }
 
       /* ---------- init ---------- */
-      editor = $('editor');
       btn = $('generateBtn');
       btnLabel = $('btnLabel');
       btnSpinner = $('btnSpinner');
-
-      wireToolbar();
       btn.addEventListener('click', submitForm);
       loadSession();
     });

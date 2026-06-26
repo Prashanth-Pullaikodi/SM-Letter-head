@@ -62,10 +62,11 @@ function doGet(e) {
       Session.getEffectiveUser().getEmail() || '(empty)',
       e ? JSON.stringify(e.parameter) : '(no event)');
 
+    // NOTE: Do NOT call setXFrameOptionsMode(ALLOWALL) here. Removing the frame-protection
+    // header makes the browser reject Google's sandbox iframe, which renders as a blank
+    // "Access Denied" page even though the server served the HTML fine. Use the default.
     var out = HtmlService.createHtmlOutputFromFile('Index')
-      .setTitle('Corporate Letterhead Generator')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+      .setTitle('Corporate Letterhead Generator');
 
     Logger.log('doGet OK | Index.html served successfully');
     return out;

@@ -20,11 +20,14 @@
 
 // 1) Paste each template's Google Doc ID here. The KEY must match the dropdown value in Index.html.
 //    The ID is the long string in the Doc URL: docs.google.com/document/d/<<<THIS_PART>>>/edit
-//    Each template is EITHER:
-//      type:'doc'     -> uses a Google Doc you designed; set its docId.
-//      type:'builtin' -> the letterhead is built in code (no Doc needed); set companyName,
+//    Each template is ONE of:
+//      type:'doc'     -> uses a Google Doc you designed; set its docId. Supports RICH body text.
+//      type:'slides'  -> uses a Google Slides deck (e.g. an imported .pptx); set its slidesId.
+//                        Body is inserted as PLAIN text (Slides can't take rich formatting).
+//      type:'builtin' -> the letterhead is built in code (no file needed); set companyName,
 //                        tagline, color (brand hex), and footer.
-//    You can mix both kinds freely. The KEY (e.g. 'official') must match the dropdown value.
+//    You can mix all kinds freely. The KEY (e.g. 'official') must match the dropdown value.
+//    Both Doc and Slides templates must contain {RECIPIENT_DATA} and {LETTER_BODY} as text.
 const TEMPLATES = {
   'official': {
     label: 'Official Corporate',
@@ -234,6 +237,11 @@ function generateLetter(formData) {
         return { ok: false, error: 'Template "' + tpl.label + '" has no Doc ID set in Code.gs.' };
       }
       pdfBlob = renderFromDocTemplate_(tpl.docId, recipient, bodyHtml, user);
+    } else if (tpl.type === 'slides') {
+      if (!tpl.slidesId || tpl.slidesId.indexOf('PASTE_') === 0) {
+        return { ok: false, error: 'Template "' + tpl.label + '" has no Slides ID set in Code.gs.' };
+      }
+      pdfBlob = renderFromSlidesTemplate_(tpl.slidesId, recipient, bodyHtml, user);
     } else {
       pdfBlob = renderFromBuiltinTemplate_(tpl, recipient, bodyHtml);
     }
@@ -319,6 +327,26 @@ function renderFromBuiltinTemplate_(tpl, recipient, bodyHtml) {
     return DriveApp.getFileById(docId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
   } finally {
     try { DriveApp.getFileById(docId).setTrashed(true); } catch (e) {}
+  }
+}
+
+/**
+ * SLIDES TEMPLATE: for a Google Slides letterhead (e.g. an imported .pptx design). Copies the
+ * presentation, replaces {RECIPIENT_DATA} and {LETTER_BODY} text, exports to PDF, deletes copy.
+ * NOTE: Slides replaceAllText is PLAIN text only — rich formatting from the editor (colors,
+ * fonts) is not carried into a Slides template; the body inherits the placeholder's own style.
+ */
+function renderFromSlidesTemplate_(slidesId, recipient, bodyHtml, user) {
+  var copy = DriveApp.getFileById(slidesId).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
+  var copyId = copy.getId();
+  try {
+    var pres = SlidesApp.openById(copyId);
+    pres.replaceAllText('{RECIPIENT_DATA}', recipient);
+    pres.replaceAllText('{LETTER_BODY}', stripHtml_(bodyHtml));
+    pres.saveAndClose();
+    return DriveApp.getFileById(copyId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
+  } finally {
+    try { DriveApp.getFileById(copyId).setTrashed(true); } catch (e) {}
   }
 }
 

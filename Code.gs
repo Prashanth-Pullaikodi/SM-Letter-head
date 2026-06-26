@@ -378,7 +378,14 @@ function applyFieldsToSlides_(pres, fields) {
  * DOC TEMPLATE: copy the Doc, replace all {TAG} placeholders, export PDF, delete copy.
  */
 function renderFromDocTemplate_(docId, fields, user, label) {
-  var copy = getTemplateFile_(docId, label).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
+  var srcFile = getTemplateFile_(docId, label);
+  // A doc template must be a NATIVE Google Doc, not an uploaded Word .docx — DocumentApp
+  // cannot open .docx and throws "The document is inaccessible". Detect and explain.
+  if (srcFile.getMimeType() === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    throw new Error('Template "' + label + '" is still a Word (.docx) file, not a Google Doc. ' +
+      'Open it in Drive, choose File > Save as Google Docs, and use the NEW document\'s ID.');
+  }
+  var copy = srcFile.makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
   var copyId = copy.getId();
   try {
     var doc = DocumentApp.openById(copyId);
@@ -508,8 +515,15 @@ function insertRichBody_(body, placeholder, html) {
     }
   });
 
-  // Remove the original placeholder paragraph.
-  try { parent.removeChild(paragraph); } catch (e) {}
+  // Remove the original placeholder paragraph. If it's the LAST paragraph of the section it
+  // cannot be removed (Apps Script throws) — in that case clear its text so the literal
+  // {LETTER_BODY} does not appear in the output.
+  try {
+    parent.removeChild(paragraph);
+  } catch (e) {
+    try { paragraph.clear(); }
+    catch (e2) { try { paragraph.editAsText().setText(''); } catch (e3) {} }
+  }
 }
 
 /**

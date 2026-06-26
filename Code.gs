@@ -84,6 +84,23 @@ function doGet(e) {
  * ============================================================================================ */
 
 /**
+ * Returns the Users sheet from the bound spreadsheet. Throws a clear error if the script isn't
+ * bound to a sheet or setup() hasn't been run yet.
+ */
+function getUsersSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    throw new Error('No bound spreadsheet found. This script must be created from inside a ' +
+      'Google Sheet (Extensions > Apps Script), then run setup().');
+  }
+  var sheet = ss.getSheetByName(USERS_SHEET_NAME);
+  if (!sheet) {
+    throw new Error('The "' + USERS_SHEET_NAME + '" sheet was not found. Run setup() once first.');
+  }
+  return sheet;
+}
+
+/**
  * Returns the active user's record from the Users sheet, or null if they are not authorised.
  * Uses Session.getActiveUser() — the verified Google identity, which cannot be spoofed by the
  * client — so the access check is enforced server-side and is secure.

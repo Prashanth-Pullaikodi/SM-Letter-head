@@ -327,7 +327,15 @@ function generateLetter(formData) {
  * Opens a template file by ID, converting Drive's cryptic "Document is missing" / access errors
  * into a clear, actionable message that names the template and the likely fix.
  */
+function cleanId_(id) {
+  id = String(id || '').trim();
+  var m = id.match(/\/d\/([A-Za-z0-9_-]+)/);   // a full pasted URL like .../d/<ID>/edit
+  if (m) return m[1];
+  return id.replace(/[\/\s]+$/, '');           // strip trailing slashes / whitespace
+}
+
 function getTemplateFile_(fileId, label) {
+  fileId = cleanId_(fileId);
   try {
     return DriveApp.getFileById(fileId);
   } catch (e) {

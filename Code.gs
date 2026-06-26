@@ -72,7 +72,7 @@ const TEMPLATE_ROLE_RESTRICTIONS = {
 const FIELDS = [
   { tag: 'RECIPIENT_NAME',    label: 'Recipient Name',     type: 'text',     required: true  },
   { tag: 'RECIPIENT_COMPANY', label: 'Recipient Company',  type: 'text',     required: false },
-  { tag: 'RECIPIENT_ADDRESS', label: 'Recipient Address',  type: 'textarea', required: false },
+  { tag: 'ADDRESS',           label: 'Address',            type: 'textarea', required: false },
   { tag: 'SUBJECT',           label: 'Subject',            type: 'text',     required: false },
   { tag: 'LETTER_BODY',       label: 'Letter Content',     type: 'rich',     required: true  }
 ];

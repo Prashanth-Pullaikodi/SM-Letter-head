@@ -93,6 +93,21 @@
     .tips code { background:#eef3f1; padding:1px 6px; border-radius:5px; color:var(--brand); font-size:.8rem; }
     .gate { text-align:center; padding:60px 20px; color:var(--muted); }
     .footer { text-align:center; color:var(--muted); font-size:.78rem; margin-top:26px; }
+    /* line items */
+    .li-table { width:100%; border-collapse:collapse; }
+    .li-table th { font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:var(--muted);
+      text-align:left; padding:4px 6px; font-weight:700; }
+    .li-table td { padding:3px 4px; }
+    .li-table input { padding:8px 9px; font-size:.86rem; }
+    .li-amt { text-align:right; font-weight:600; color:var(--brand); font-size:.86rem; padding-right:6px; white-space:nowrap; }
+    .li-del { border:none; background:#f3eaea; color:var(--danger); width:28px; height:28px; border-radius:7px;
+      cursor:pointer; font-weight:700; line-height:1; }
+    .li-add { margin-top:6px; border:1px dashed var(--border); background:#fbfcff; color:var(--brand);
+      padding:7px 12px; border-radius:9px; cursor:pointer; font-size:.82rem; font-weight:600; }
+    .li-add:hover { background:#eef3f1; }
+    .computed input { background:#eef3f1; font-weight:700; color:var(--brand); }
+    .row2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    @media (max-width:520px){ .row2 { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -155,6 +170,8 @@
 
       var FORMS = {};        // { letter: {label, fields}, invoice: {...} }
       var TEMPLATES = [];    // [{ key, label, form }]
+      var ROOMS = [];        // [{ name, tariff }] for the Room dropdown
+      var NEXT_INV = '';     // next invoice number for prefill
       var activeForm = null;
       var curFields = [];    // field defs for the active form
       var editor = null;
@@ -243,6 +260,8 @@
 
         FORMS = info.forms || {};
         TEMPLATES = info.templates || [];
+        ROOMS = info.rooms || [];
+        NEXT_INV = info.nextInvoiceNo || '';
 
         // Build a tab per form that actually has at least one template available to this user.
         var tabsEl = $('tabs');
@@ -306,6 +325,7 @@
           wrap.appendChild(lab);
 
           var hint = f.placeholder || '';
+
           if (f.type === 'rich') {
             var ew = document.createElement('div');
             ew.className = 'editor-wrap';
@@ -313,15 +333,50 @@
               '<div class="editor" id="editor" contenteditable="true" data-placeholder="' +
               escapeHtml(hint || 'Type the content...') + '"></div>';
             wrap.appendChild(ew);
+
           } else if (f.type === 'textarea') {
             var ta = document.createElement('textarea');
             ta.id = 'fld_' + f.tag; ta.placeholder = hint;
             if (f.default) ta.value = defaultValue(f.default);
             wrap.appendChild(ta);
-          } else {
+
+          } else if (f.type === 'date') {
+            var di = document.createElement('input');
+            di.type = 'date'; di.id = 'fld_' + f.tag;
+            if (f.default === 'today') di.value = todayISO();
+            wrap.appendChild(di);
+
+          } else if (f.type === 'number') {
+            var ni = document.createElement('input');
+            ni.type = 'number'; ni.id = 'fld_' + f.tag; ni.placeholder = hint; ni.min = '0';
+            ni.addEventListener('input', recalc);
+            wrap.appendChild(ni);
+
+          } else if (f.type === 'select') {
+            var se = document.createElement('select');
+            se.id = 'fld_' + f.tag;
+            se.appendChild(opt('', hint || '-- select --'));
+            var opts = f.optionsKey === 'rooms'
+              ? ROOMS.map(function (r) { return r.name; })
+              : (f.options || []);
+            opts.forEach(function (o) { se.appendChild(opt(o, o)); });
+            if (f.optionsKey === 'rooms') se.addEventListener('change', onRoomChange);
+            wrap.appendChild(se);
+
+          } else if (f.type === 'lineitems') {
+            wrap.appendChild(buildLineItems(f));
+
+          } else if (f.type === 'computed') {
+            wrap.className += ' computed';
+            var ci = document.createElement('input');
+            ci.type = 'text'; ci.id = 'fld_' + f.tag; ci.readOnly = true; ci.value = '0';
+            wrap.appendChild(ci);
+
+          } else { // text (and 'auto')
             var inp = document.createElement('input');
             inp.type = 'text'; inp.id = 'fld_' + f.tag; inp.placeholder = hint;
-            if (f.default) inp.value = defaultValue(f.default);
+            if (f.auto === 'invoiceNo') inp.value = NEXT_INV;
+            else if (f.default) inp.value = defaultValue(f.default);
             wrap.appendChild(inp);
           }
 
@@ -334,6 +389,100 @@
 
         editor = $('editor');
         if (editor) wireToolbar(editor);
+        recalc();
+      }
+
+      function opt(value, text) { var o = document.createElement('option'); o.value = value; o.textContent = text; return o; }
+      function todayISO() { var d = new Date(); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+      function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+      /* ---------- line-item table ---------- */
+      function buildLineItems(f) {
+        var box = document.createElement('div');
+        box.setAttribute('data-lineitems', f.tag);
+        box.setAttribute('data-total', f.totalTag || '');
+        box.setAttribute('data-itemhint', f.itemPlaceholder || 'Item / description');
+        var tbl = document.createElement('table');
+        tbl.className = 'li-table';
+        tbl.innerHTML = '<thead><tr><th style="width:46%">Item</th><th style="width:13%">Qty</th>' +
+          '<th style="width:18%">Rate</th><th style="width:18%;text-align:right">Amount</th><th></th></tr></thead>' +
+          '<tbody></tbody>';
+        box.appendChild(tbl);
+        var add = document.createElement('button');
+        add.type = 'button'; add.className = 'li-add'; add.textContent = '+ Add item';
+        add.addEventListener('click', function () { addLineRow(box); recalc(); });
+        box.appendChild(add);
+        addLineRow(box);  // start with one empty row
+        return box;
+      }
+
+      function addLineRow(box, item, qty, rate) {
+        var tbody = box.querySelector('tbody');
+        var tr = document.createElement('tr');
+        var hint = box.getAttribute('data-itemhint');
+        tr.innerHTML =
+          '<td><input class="li-item" type="text" placeholder="' + escapeHtml(hint) + '"></td>' +
+          '<td><input class="li-qty" type="number" min="0" step="1" placeholder="1"></td>' +
+          '<td><input class="li-rate" type="number" min="0" step="0.01" placeholder="0"></td>' +
+          '<td class="li-amt">0</td>' +
+          '<td><button type="button" class="li-del" title="Remove">x</button></td>';
+        tbody.appendChild(tr);
+        if (item != null) tr.querySelector('.li-item').value = item;
+        if (qty != null) tr.querySelector('.li-qty').value = qty;
+        if (rate != null) tr.querySelector('.li-rate').value = rate;
+        tr.querySelector('.li-qty').addEventListener('input', recalc);
+        tr.querySelector('.li-rate').addEventListener('input', recalc);
+        tr.querySelector('.li-del').addEventListener('click', function () {
+          if (tbody.rows.length > 1) tbody.removeChild(tr); else clearRow(tr);
+          recalc();
+        });
+      }
+      function clearRow(tr) {
+        tr.querySelector('.li-item').value = '';
+        tr.querySelector('.li-qty').value = '';
+        tr.querySelector('.li-rate').value = '';
+      }
+
+      /* When a room is picked, prefill the first Room line item with its name + tariff. */
+      function onRoomChange() {
+        var name = this.value;
+        var tariff = '';
+        ROOMS.forEach(function (r) { if (r.name === name) tariff = r.tariff; });
+        var box = document.querySelector('[data-lineitems="ROOM_DETAILS"]');
+        if (!box || !name) { recalc(); return; }
+        var firstRow = box.querySelector('tbody tr');
+        if (firstRow) {
+          firstRow.querySelector('.li-item').value = name + ' Tariff';
+          if (tariff !== '' && !firstRow.querySelector('.li-rate').value) firstRow.querySelector('.li-rate').value = tariff;
+          if (!firstRow.querySelector('.li-qty').value) firstRow.querySelector('.li-qty').value = '1';
+        }
+        recalc();
+      }
+
+      /* ---------- live totals ---------- */
+      function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+      function lineItemsTotal(box) {
+        var total = 0;
+        Array.prototype.forEach.call(box.querySelectorAll('tbody tr'), function (tr) {
+          var amt = num(tr.querySelector('.li-qty').value) * num(tr.querySelector('.li-rate').value);
+          tr.querySelector('.li-amt').textContent = amt ? amt.toFixed(0) : '0';
+          total += amt;
+        });
+        return total;
+      }
+      function setComputed(tag, val) { var el = $('fld_' + tag); if (el) el.value = String(val); }
+      function recalc() {
+        var roomBox = document.querySelector('[data-lineitems="ROOM_DETAILS"]');
+        var foodBox = document.querySelector('[data-lineitems="FOOD_DETAILS"]');
+        if (!roomBox && !foodBox) return;  // not the invoice form
+        var roomTotal = roomBox ? lineItemsTotal(roomBox) : 0;
+        var foodTotal = foodBox ? lineItemsTotal(foodBox) : 0;
+        var grand = roomTotal + foodTotal;
+        var advance = num($('fld_ADVANCE_PAID') ? $('fld_ADVANCE_PAID').value : 0);
+        setComputed('ROOM_TOTAL', roomTotal.toFixed(0));
+        setComputed('FOOD_TOTAL', foodTotal.toFixed(0));
+        setComputed('GRAND_TOTAL', grand.toFixed(0));
+        setComputed('BALANCE', (grand - advance).toFixed(0));
       }
 
       /* ---------- toolbar ---------- */
@@ -366,6 +515,30 @@
       }
 
       /* ---------- submit ---------- */
+      /* yyyy-mm-dd -> dd/mm/yyyy */
+      function isoToDisplay(iso) {
+        var p = String(iso).split('-');
+        return (p.length === 3) ? (p[2] + '/' + p[1] + '/' + p[0]) : iso;
+      }
+
+      /* Assemble a line-item table into text: "Item   qty x rate = amount" per non-empty row. */
+      function collectLineItems(tag) {
+        var box = document.querySelector('[data-lineitems="' + tag + '"]');
+        if (!box) return '';
+        var lines = [];
+        Array.prototype.forEach.call(box.querySelectorAll('tbody tr'), function (tr) {
+          var item = tr.querySelector('.li-item').value.trim();
+          var qty = tr.querySelector('.li-qty').value.trim();
+          var rate = tr.querySelector('.li-rate').value.trim();
+          if (!item && !qty && !rate) return;
+          var amt = (num(qty) * num(rate));
+          var line = item || 'Item';
+          if (qty || rate) line += '  ' + (qty || '1') + ' x ' + (rate || '0') + ' = ' + amt.toFixed(0);
+          lines.push(line);
+        });
+        return lines.join('\n');
+      }
+
       function submitForm() {
         clearErrors();
         var template = $('template').value.trim();
@@ -377,9 +550,16 @@
           if (f.type === 'rich') {
             val = editor ? editor.innerHTML.trim() : '';
             text = editor ? (editor.innerText || editor.textContent || '').trim() : '';
+          } else if (f.type === 'lineitems') {
+            val = collectLineItems(f.tag);
+            text = val;
+          } else if (f.type === 'date') {
+            var de = $('fld_' + f.tag);
+            val = de && de.value ? isoToDisplay(de.value) : '';
+            text = val;
           } else {
             var el = $('fld_' + f.tag);
-            val = el ? el.value.trim() : ''; text = val;
+            val = el ? String(el.value).trim() : ''; text = val;
           }
           data[f.tag] = val;
           if (f.required && !text) { markError(f.tag); firstBad = firstBad || f.tag; }
@@ -402,6 +582,19 @@
         if (!res || !res.ok) { showAlert('error', (res && res.error) ? res.error : 'Unknown error generating PDF.'); return; }
         triggerDownload(res.base64, res.fileName || 'Generated.pdf');
         showAlert('success', 'Your PDF has been generated and downloaded.');
+        // If this was an invoice, advance the displayed invoice number for the next one.
+        if (activeForm === 'invoice') {
+          var inv = $('fld_INVOICE_NO');
+          if (inv) inv.value = nextInvoiceNo(inv.value);
+        }
+      }
+      function nextInvoiceNo(cur) {
+        var m = String(cur).match(/^(.*?)(\d+)(\D*)$/);
+        if (!m) return cur;
+        var width = m[2].length;
+        var n = String(parseInt(m[2], 10) + 1);
+        while (n.length < width) n = '0' + n;
+        return m[1] + n + m[3];
       }
 
       function triggerDownload(base64, fileName) {

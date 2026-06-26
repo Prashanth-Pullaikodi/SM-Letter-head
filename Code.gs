@@ -55,11 +55,17 @@ const TEMPLATES = {
     color: '#1a237e',
     footer: 'Confidential - Internal Use Only'
   },
-  'invoice': {
-    label: 'Guest Invoice',
+  'invoice_gst': {
+    label: 'Guest Invoice (with GST)',
     type: 'doc',
-    form: 'invoice',                               // belongs to the Invoice tab
-    docId: 'PASTE_INVOICE_GOOGLE_DOC_ID_HERE'      // import the invoice .docx, convert to Google Doc, paste its ID
+    form: 'invoice',
+    docId: 'PASTE_INVOICE_GST_GOOGLE_DOC_ID_HERE'      // import 05_Guest_Invoice_GST.docx, convert, paste ID
+  },
+  'invoice_nogst': {
+    label: 'Guest Invoice (no GST)',
+    type: 'doc',
+    form: 'invoice',
+    docId: 'PASTE_INVOICE_NOGST_GOOGLE_DOC_ID_HERE'    // import 06_Guest_Invoice_NoGST.docx, convert, paste ID
   }
 };
 
@@ -98,36 +104,27 @@ const FORMS = {
   invoice: {
     label: 'Invoice',
     fields: [
-      { tag: 'INVOICE_NO',   label: 'Invoice No.',          type: 'text',     required: false,
-        placeholder: 'e.g. SM/2026/0521' },
-      { tag: 'INVOICE_DATE', label: 'Invoice Date',         type: 'text',     required: false, default: 'today',
-        placeholder: 'e.g. 21 June 2026' },
-      { tag: 'GUEST_NAME',   label: 'Guest Name',           type: 'text',     required: true,
+      { tag: 'INVOICE_NO',   label: 'Invoice No.',     type: 'text',   required: false, auto: 'invoiceNo',
+        placeholder: 'auto-generated (you can edit)' },
+      { tag: 'INVOICE_DATE', label: 'Invoice Date',    type: 'date',   required: false, default: 'today' },
+      { tag: 'GUEST_NAME',   label: 'Guest Name',      type: 'text',   required: true,
         placeholder: 'e.g. Vivek' },
-      { tag: 'CHECK_IN',     label: 'Check-in Date',        type: 'text',     required: false,
-        placeholder: 'e.g. 19/06/2026' },
-      { tag: 'CHECK_OUT',    label: 'Check-out Date',       type: 'text',     required: false,
-        placeholder: 'e.g. 21/06/2026' },
-      { tag: 'NUM_ROOMS',    label: 'No. of Rooms',         type: 'text',     required: false,
-        placeholder: 'e.g. 1 Premium Room' },
-      { tag: 'NUM_GUESTS',   label: 'No. of Guests',        type: 'text',     required: false,
-        placeholder: 'e.g. 05' },
-      { tag: 'MEAL_PLAN',    label: 'Meal Plan',            type: 'text',     required: false,
-        placeholder: 'e.g. CP' },
-      { tag: 'ROOM_DETAILS', label: 'Room Charges (one per line)', type: 'textarea', required: false,
-        placeholder: 'ROOM TARIFF (6000 x 2 NIGHTS) = 12000\n(leave blank for a food-only bill)' },
-      { tag: 'ROOM_TOTAL',   label: 'Room Total (Rs.)',     type: 'text',     required: false,
-        placeholder: 'e.g. 12000' },
-      { tag: 'FOOD_DETAILS', label: 'Food Items (one per line)', type: 'textarea', required: false,
-        placeholder: 'Onion Pakoda : 3 x 200 = 600\nPaneer Butter Masala : 1 x 350 = 350\n(leave blank for a room-only bill)' },
-      { tag: 'FOOD_TOTAL',   label: 'Food Total (Rs.)',     type: 'text',     required: false,
-        placeholder: 'e.g. 5685' },
-      { tag: 'GRAND_TOTAL',  label: 'Grand Total (Rs.)',    type: 'text',     required: false,
-        placeholder: 'e.g. 17685' },
-      { tag: 'ADVANCE_PAID', label: 'Advance Paid (Rs.)',   type: 'text',     required: false,
-        placeholder: 'e.g. 0' },
-      { tag: 'BALANCE',      label: 'Balance Payable (Rs.)', type: 'text',    required: false,
-        placeholder: 'e.g. 17685' }
+      { tag: 'CHECK_IN',     label: 'Check-in Date',   type: 'date',   required: false },
+      { tag: 'CHECK_OUT',    label: 'Check-out Date',  type: 'date',   required: false },
+      { tag: 'ROOM_TYPE',    label: 'Room',            type: 'select', required: false, optionsKey: 'rooms',
+        placeholder: 'Select a room' },
+      { tag: 'NUM_GUESTS',   label: 'No. of Guests',   type: 'number', required: false, placeholder: 'e.g. 5' },
+      { tag: 'MEAL_PLAN',    label: 'Meal Plan',       type: 'select', required: false,
+        options: ['EP (Room only)', 'CP (Breakfast)', 'MAP (Breakfast + 1 meal)', 'AP (All meals)'] },
+      { tag: 'ROOM_DETAILS', label: 'Room Charges',    type: 'lineitems', totalTag: 'ROOM_TOTAL',
+        itemPlaceholder: 'e.g. Premium Room Tariff' },
+      { tag: 'ROOM_TOTAL',   label: 'Room Total (Rs.)', type: 'computed' },
+      { tag: 'FOOD_DETAILS', label: 'Food Items',      type: 'lineitems', totalTag: 'FOOD_TOTAL',
+        itemPlaceholder: 'e.g. Paneer Butter Masala' },
+      { tag: 'FOOD_TOTAL',   label: 'Food Total (Rs.)', type: 'computed' },
+      { tag: 'GRAND_TOTAL',  label: 'Grand Total (Rs.)', type: 'computed' },
+      { tag: 'ADVANCE_PAID', label: 'Advance Paid (Rs.)', type: 'number', placeholder: '0' },
+      { tag: 'BALANCE',      label: 'Balance Payable (Rs.)', type: 'computed' }
     ]
   }
 };
@@ -137,6 +134,37 @@ function fieldsForTemplate_(tpl) {
   var formKey = (tpl && tpl.form) ? tpl.form : 'letter';
   var form = FORMS[formKey] || FORMS.letter;
   return form.fields;
+}
+
+/* ---- Invoice number counter (stored in Script Properties) ---- */
+function invoicePrefix_() {
+  return 'SM/' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy') + '/';
+}
+function padLeft_(n, w) { var s = String(n); while (s.length < w) s = '0' + s; return s; }
+function peekInvoiceNo_() {
+  var seq = parseInt(PropertiesService.getScriptProperties().getProperty('INVOICE_SEQ') || '0', 10) + 1;
+  return invoicePrefix_() + padLeft_(seq, 4);
+}
+function bumpInvoiceNo_() {
+  var props = PropertiesService.getScriptProperties();
+  var seq = parseInt(props.getProperty('INVOICE_SEQ') || '0', 10) + 1;
+  props.setProperty('INVOICE_SEQ', String(seq));
+}
+
+/* ---- Room list from the "Rooms" sheet (Name | Tariff) ---- */
+function getRooms_() {
+  try {
+    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Rooms');
+    if (!sh) return [];
+    var rows = sh.getDataRange().getValues();
+    var out = [];
+    for (var i = 1; i < rows.length; i++) {
+      var name = String(rows[i][0] || '').trim();
+      if (!name) continue;
+      out.push({ name: name, tariff: (rows[i].length > 1 ? String(rows[i][1] || '').trim() : '') });
+    }
+    return out;
+  } catch (e) { return []; }
 }
 
 
@@ -292,7 +320,9 @@ function getSessionInfo() {
     name: user.name,
     email: user.email,
     role: user.role,
-    templates: allowed
+    templates: allowed,
+    rooms: getRooms_(),
+    nextInvoiceNo: peekInvoiceNo_()
   };
 }
 
@@ -365,13 +395,15 @@ function generateLetter(formData) {
       pdfBlob = renderFromBuiltinTemplate_(tpl, fields, fieldList);
     }
 
-    // ---- 4. LOG (audit trail) -------------------------------------------------------------
+    // ---- 4. LOG (audit trail) + advance invoice counter -----------------------------------
     logGeneration_(user, templateKey);
+    if (tpl.form === 'invoice') bumpInvoiceNo_();
 
     // ---- 5. RETURN AS BASE64 --------------------------------------------------------------
+    var outName = (tpl.form === 'invoice') ? 'Invoice.pdf' : 'Generated_Letterhead.pdf';
     return {
       ok: true,
-      fileName: 'Generated_Letterhead.pdf',
+      fileName: outName,
       base64: Utilities.base64Encode(pdfBlob.getBytes())
     };
 
@@ -485,7 +517,7 @@ function renderFromBuiltinTemplate_(tpl, fields, fieldList) {
 
     // --- Header (repeats on every page) ---
     var header = doc.addHeader();
-    header.appendParagraph(tpl.companyName || 'SM CORPORATION')
+    header.appendParagraph(tpl.companyName || 'SandalMist Resort & Spa')
       .setForegroundColor(color).setBold(true).setFontSize(20);
     if (tpl.tagline) {
       header.appendParagraph(tpl.tagline).setForegroundColor('#777777').setFontSize(9).setBold(false);
@@ -933,6 +965,21 @@ function setup() {
     log.setFrozenRows(1);
   }
 
+  // ---- Rooms sheet (drives the Invoice "Room" dropdown). Edit Name/Tariff to manage rooms. ----
+  if (!ss.getSheetByName('Rooms')) {
+    var rooms = ss.insertSheet('Rooms');
+    rooms.appendRow(['Name', 'Tariff (per night)']);
+    rooms.getRange(1, 1, 1, 2).setFontWeight('bold').setBackground('#1f4d46').setFontColor('#ffffff');
+    rooms.getRange(2, 1, 4, 2).setValues([
+      ['Premium Room', 6000],
+      ['Deluxe Room', 4500],
+      ['Standard Room', 3000],
+      ['Cottage', 8000]
+    ]);
+    rooms.setFrozenRows(1);
+    rooms.autoResizeColumns(1, 2);
+  }
+
   SpreadsheetApp.getUi && SpreadsheetApp.flush();
-  Logger.log('Setup complete. Users sheet created and protected. Replace sample rows with real staff.');
+  Logger.log('Setup complete. Users, Log and Rooms sheets ready. Replace sample rows with real data.');
 }

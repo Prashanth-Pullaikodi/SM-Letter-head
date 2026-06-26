@@ -70,11 +70,17 @@ const TEMPLATE_ROLE_RESTRICTIONS = {
 //    type: 'text' (single line) | 'textarea' (multi-line) | 'rich' (the styled editor; use ONE).
 //    e.g. put {RECIPIENT_NAME} in the name box, {RECIPIENT_ADDRESS} in the address box, etc.
 const FIELDS = [
-  { tag: 'RECIPIENT_NAME',    label: 'Recipient Name',     type: 'text',     required: true  },
-  { tag: 'RECIPIENT_COMPANY', label: 'Recipient Company',  type: 'text',     required: false },
-  { tag: 'DATE',              label: 'Date',               type: 'text',     required: false, default: 'today' },
-  { tag: 'SUBJECT',           label: 'Subject',            type: 'text',     required: false },
-  { tag: 'LETTER_BODY',       label: 'Letter Content',     type: 'rich',     required: true  }
+  { tag: 'RECIPIENT_NAME',    label: 'Recipient Name',     type: 'text',     required: true,
+    placeholder: 'e.g. Mr. Michael Johnson' },
+  { tag: 'RECIPIENT_COMPANY', label: 'Recipient Company',  type: 'text',     required: false,
+    placeholder: 'e.g. Nexus Technologies Pvt. Ltd.' },
+  { tag: 'DATE',              label: 'Date',               type: 'text',     required: false, default: 'today',
+    placeholder: 'e.g. 26 June 2026' },
+  { tag: 'SUBJECT',           label: 'Subject',            type: 'text',     required: false,
+    placeholder: 'e.g. Buffet Pricing Proposal for your event' },
+  { tag: 'LETTER_BODY',       label: 'Letter Content',     type: 'rich',     required: true,
+    placeholder: 'Type your letter here. Select text and use the toolbar above to make it Bold, ' +
+                 'change colour/font, align, or add bullet lists. Press Enter for a new paragraph.' }
 ];
 
 function fieldDef_(tag) {

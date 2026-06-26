@@ -258,21 +258,25 @@
           lab.innerHTML = escapeHtml(f.label) + (f.required ? ' <span class="req">*</span>' : '');
           wrap.appendChild(lab);
 
+          var hint = f.placeholder || '';
           if (f.type === 'rich') {
             var ew = document.createElement('div');
             ew.className = 'editor-wrap';
             ew.innerHTML = TOOLBAR_HTML +
-              '<div class="editor" id="editor" contenteditable="true" data-placeholder="Type the letter content. Use the toolbar to style it..."></div>';
+              '<div class="editor" id="editor" contenteditable="true" data-placeholder="' +
+              escapeHtml(hint || 'Type the letter content...') + '"></div>';
             wrap.appendChild(ew);
           } else if (f.type === 'textarea') {
             var ta = document.createElement('textarea');
             ta.id = 'fld_' + f.tag;
+            ta.placeholder = hint;
             if (f.default) ta.value = defaultValue(f.default);
             wrap.appendChild(ta);
           } else {
             var inp = document.createElement('input');
             inp.type = 'text';
             inp.id = 'fld_' + f.tag;
+            inp.placeholder = hint;
             if (f.default) inp.value = defaultValue(f.default);
             wrap.appendChild(inp);
           }

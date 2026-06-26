@@ -72,6 +72,7 @@ const TEMPLATE_ROLE_RESTRICTIONS = {
 const FIELDS = [
   { tag: 'RECIPIENT_NAME',    label: 'Recipient Name',     type: 'text',     required: true  },
   { tag: 'RECIPIENT_COMPANY', label: 'Recipient Company',  type: 'text',     required: false },
+  { tag: 'DATE',              label: 'Date',               type: 'text',     required: false, default: 'today' },
   { tag: 'SUBJECT',           label: 'Subject',            type: 'text',     required: false },
   { tag: 'LETTER_BODY',       label: 'Letter Content',     type: 'rich',     required: true  }
 ];
@@ -272,6 +273,13 @@ function generateLetter(formData) {
     if (!roleCanUseTemplate_(user.role, templateKey)) {
       return { ok: false, error: 'Your role (' + user.role + ') may not use this template.' };
     }
+
+    // Apply field defaults (e.g. DATE -> today) if the client left them blank.
+    FIELDS.forEach(function (f) {
+      if (f.default === 'today' && !String(fields[f.tag] || '').trim()) {
+        fields[f.tag] = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd MMMM yyyy');
+      }
+    });
 
     var tpl = TEMPLATES[templateKey];
     if (!tpl) {

@@ -163,6 +163,14 @@
           return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c];
         });
       }
+      function defaultValue(def) {
+        if (def === 'today') {
+          var d = new Date();
+          try { return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }); }
+          catch (e) { return d.toDateString(); }
+        }
+        return def;  // any other default is used as a literal string
+      }
 
       var TOOLBAR_HTML =
         '<div class="toolbar">' +
@@ -259,11 +267,13 @@
           } else if (f.type === 'textarea') {
             var ta = document.createElement('textarea');
             ta.id = 'fld_' + f.tag;
+            if (f.default) ta.value = defaultValue(f.default);
             wrap.appendChild(ta);
           } else {
             var inp = document.createElement('input');
             inp.type = 'text';
             inp.id = 'fld_' + f.tag;
+            if (f.default) inp.value = defaultValue(f.default);
             wrap.appendChild(inp);
           }
 

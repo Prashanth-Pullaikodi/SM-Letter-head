@@ -51,13 +51,30 @@ const TEMPLATE_ROLE_RESTRICTIONS = {
  * ============================================================================================ */
 
 /**
- * Serves the HTML web form.
+ * Serves the HTML web form. Instrumented with logging so the Executions panel shows exactly
+ * what happened: which account hit it, and whether the HTML was served. If anything throws,
+ * the error is logged AND rendered to the page instead of a blank failure.
  */
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('Corporate Letterhead Generator')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+function doGet(e) {
+  try {
+    Logger.log('doGet START | activeUser=%s | effectiveUser=%s | params=%s',
+      Session.getActiveUser().getEmail() || '(empty)',
+      Session.getEffectiveUser().getEmail() || '(empty)',
+      e ? JSON.stringify(e.parameter) : '(no event)');
+
+    var out = HtmlService.createHtmlOutputFromFile('Index')
+      .setTitle('Corporate Letterhead Generator')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+
+    Logger.log('doGet OK | Index.html served successfully');
+    return out;
+  } catch (err) {
+    Logger.log('doGet ERROR | ' + (err && err.stack ? err.stack : err));
+    return HtmlService.createHtmlOutput(
+      '<h2 style="font-family:sans-serif;color:#c00">doGet failed</h2>' +
+      '<pre style="font-family:monospace">' + (err && err.message ? err.message : err) + '</pre>');
+  }
 }
 
 
@@ -113,6 +130,8 @@ function roleCanUseTemplate_(role, templateKey) {
  * so the UI can show their name and hide forbidden templates. Never throws — returns a status.
  */
 function getSessionInfo() {
+  Logger.log('getSessionInfo START | activeUser=%s',
+    Session.getActiveUser().getEmail() || '(empty)');
   var user = getAuthorisedUser_();
   if (!user) {
     return {

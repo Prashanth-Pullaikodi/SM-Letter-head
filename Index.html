@@ -3,34 +3,43 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Corporate Letterhead Generator</title>
+  <title>SandalMist Document Generator</title>
   <style>
     :root {
-      --brand:#1a237e; --brand-light:#3949ab; --accent:#c8a04a;
-      --bg:#eef1f8; --card:#ffffff; --text:#1f2430; --muted:#6b7280;
+      --brand:#1f4d46; --brand-light:#2e6b60; --accent:#c9a24b;
+      --card:#ffffff; --text:#1f2430; --muted:#6b7280;
       --border:#d9dee9; --danger:#d32f2f; --success:#2e7d32;
-      --radius:14px; --shadow:0 10px 30px rgba(26,35,126,.12);
+      --radius:14px; --shadow:0 10px 30px rgba(31,77,70,.12);
     }
     * { box-sizing:border-box; }
     body {
       margin:0; font-family:"Segoe UI",Roboto,Arial,sans-serif;
-      background:linear-gradient(160deg,#e8ecf7 0%,#f6f8fc 60%,#eef1f8 100%);
+      background:linear-gradient(160deg,#eaf0ee 0%,#f6f8f7 60%,#eef2f1 100%);
       color:var(--text); min-height:100vh; padding:32px 16px;
     }
     .shell { max-width:1080px; margin:0 auto; }
-    .app-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
+    .app-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; flex-wrap:wrap; }
     .brand { display:flex; align-items:center; gap:14px; }
     .brand .logo { width:52px; height:52px; border-radius:12px;
       background:linear-gradient(135deg,var(--brand),var(--brand-light));
-      display:grid; place-items:center; color:#fff; font-weight:800; font-size:22px;
+      display:grid; place-items:center; color:#fff; font-weight:800; font-size:20px;
       box-shadow:var(--shadow); letter-spacing:.5px; }
-    .brand h1 { font-size:1.35rem; margin:0; }
+    .brand h1 { font-size:1.3rem; margin:0; }
     .brand p { margin:2px 0 0; color:var(--muted); font-size:.85rem; }
     .user-chip { background:var(--card); border:1px solid var(--border); border-radius:999px;
       padding:8px 16px; font-size:.85rem; box-shadow:0 4px 14px rgba(0,0,0,.05);
       display:flex; align-items:center; gap:8px; }
     .user-chip .dot { width:9px; height:9px; border-radius:50%; background:var(--success); }
     .user-chip .role-tag { background:var(--brand); color:#fff; border-radius:6px; padding:2px 8px; font-size:.72rem; font-weight:600; }
+
+    /* Tabs */
+    .tabs { display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap; }
+    .tab { border:1px solid var(--border); background:var(--card); color:var(--muted);
+      padding:10px 22px; border-radius:999px; cursor:pointer; font-weight:700; font-size:.9rem;
+      transition:all .15s; box-shadow:0 2px 8px rgba(0,0,0,.04); }
+    .tab:hover { color:var(--brand); }
+    .tab.active { background:linear-gradient(135deg,var(--brand),var(--brand-light)); color:#fff; border-color:transparent; }
+
     .grid { display:grid; grid-template-columns:1.6fr 1fr; gap:22px; }
     @media (max-width:860px){ .grid { grid-template-columns:1fr; } }
     .card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
@@ -39,21 +48,21 @@
     .card .sub { color:var(--muted); font-size:.82rem; margin:0 0 18px; }
     label { display:block; font-weight:600; font-size:.85rem; margin:0 0 6px; }
     .req { color:var(--danger); }
-    .field { margin-bottom:20px; }
+    .field { margin-bottom:18px; }
     select, textarea, input {
-      width:100%; padding:12px 14px; font-size:.92rem; border:1px solid var(--border);
+      width:100%; padding:11px 14px; font-size:.92rem; border:1px solid var(--border);
       border-radius:10px; background:#fbfcff; color:var(--text); font-family:inherit;
       transition:border .15s, box-shadow .15s; }
     select:focus, textarea:focus, input:focus {
-      outline:none; border-color:var(--brand-light); box-shadow:0 0 0 3px rgba(57,73,171,.15); }
-    textarea { resize:vertical; min-height:80px; line-height:1.5; }
+      outline:none; border-color:var(--brand-light); box-shadow:0 0 0 3px rgba(46,107,96,.15); }
+    textarea { resize:vertical; min-height:70px; line-height:1.5; }
     .editor-wrap { border:1px solid var(--border); border-radius:10px; overflow:hidden; background:#fff; }
     .toolbar { display:flex; flex-wrap:wrap; gap:4px; align-items:center; padding:8px;
-      background:#f3f5fb; border-bottom:1px solid var(--border); }
+      background:#eef3f1; border-bottom:1px solid var(--border); }
     .toolbar button { border:1px solid transparent; background:transparent; cursor:pointer;
       min-width:32px; height:32px; padding:0 8px; border-radius:7px; font-size:14px; color:var(--text);
       display:grid; place-items:center; transition:background .12s; }
-    .toolbar button:hover { background:#e1e6f5; }
+    .toolbar button:hover { background:#dce7e4; }
     .toolbar button.active { background:var(--brand); color:#fff; }
     .toolbar select { width:auto; padding:6px 8px; font-size:.8rem; border-radius:7px; }
     .toolbar input[type=color] { width:32px; height:32px; padding:2px; border-radius:7px;
@@ -67,7 +76,7 @@
       background:linear-gradient(135deg,var(--brand),var(--brand-light));
       display:flex; align-items:center; justify-content:center; gap:10px;
       transition:transform .08s, box-shadow .15s, opacity .15s;
-      box-shadow:0 8px 20px rgba(26,35,126,.28); }
+      box-shadow:0 8px 20px rgba(31,77,70,.28); }
     .btn:hover:not(:disabled) { transform:translateY(-1px); }
     .btn:disabled { opacity:.75; cursor:not-allowed; }
     .spinner { width:18px; height:18px; border:2.5px solid rgba(255,255,255,.45);
@@ -81,7 +90,7 @@
     .field-error.show { display:block; }
     .invalid select, .invalid textarea, .invalid input, .invalid .editor-wrap { border-color:var(--danger) !important; }
     .tips { font-size:.82rem; color:var(--muted); line-height:1.7; }
-    .tips code { background:#eef1f8; padding:1px 6px; border-radius:5px; color:var(--brand); font-size:.8rem; }
+    .tips code { background:#eef3f1; padding:1px 6px; border-radius:5px; color:var(--brand); font-size:.8rem; }
     .gate { text-align:center; padding:60px 20px; color:var(--muted); }
     .footer { text-align:center; color:var(--muted); font-size:.78rem; margin-top:26px; }
   </style>
@@ -93,8 +102,8 @@
       <div class="brand">
         <div class="logo">SM</div>
         <div>
-          <h1>Corporate Letterhead Generator</h1>
-          <p>Compose, brand and export polished letters in seconds</p>
+          <h1>SandalMist Document Generator</h1>
+          <p>Letters &amp; invoices, branded and export-ready</p>
         </div>
       </div>
       <div class="user-chip" id="userChip" style="visibility:hidden">
@@ -105,56 +114,50 @@
     </div>
 
     <div class="card gate" id="gate">
-      <div class="spinner" style="border-color:rgba(26,35,126,.25);border-top-color:var(--brand);margin:0 auto 14px"></div>
+      <div class="spinner" style="border-color:rgba(31,77,70,.25);border-top-color:var(--brand);margin:0 auto 14px"></div>
       <div>Checking your access...</div>
     </div>
 
-    <div class="grid" id="app" style="display:none">
-      <div class="card">
-        <h2>Compose Letter</h2>
-        <p class="sub">Fill in the details below, then generate your branded PDF.</p>
+    <div id="app" style="display:none">
+      <div class="tabs" id="tabs"></div>
+      <div class="grid">
+        <div class="card">
+          <h2 id="formTitle">Compose</h2>
+          <p class="sub" id="formSub">Fill in the details below, then generate your PDF.</p>
 
-        <div class="field" id="f-template">
-          <label for="template">Letterhead Template <span class="req">*</span></label>
-          <select id="template">
-            <option value="">-- Select a purpose --</option>
-          </select>
-          <div class="field-error" id="e-template">Please choose a template.</div>
+          <div class="field" id="f-template">
+            <label for="template">Template <span class="req">*</span></label>
+            <select id="template"><option value="">-- Select a template --</option></select>
+            <div class="field-error" id="e-template">Please choose a template.</div>
+          </div>
+
+          <div id="fields"></div>
+
+          <button class="btn" id="generateBtn">
+            <span id="btnSpinner" class="spinner" style="display:none"></span>
+            <span id="btnLabel">Generate PDF</span>
+          </button>
+          <div class="alert" id="alert"></div>
         </div>
 
-        <!-- Dynamic fields render here, built from the backend FIELDS config -->
-        <div id="fields"></div>
-
-        <button class="btn" id="generateBtn">
-          <span id="btnSpinner" class="spinner" style="display:none"></span>
-          <span id="btnLabel">Generate PDF</span>
-        </button>
-
-        <div class="alert" id="alert"></div>
-      </div>
-
-      <div class="card">
-        <h2>How it works</h2>
-        <p class="sub">A quick guide to a perfect letter.</p>
-        <div class="tips">
-          <p><strong>1. Pick a template</strong><br>Each maps to a branded letterhead for a specific purpose.</p>
-          <p><strong>2. Fill the fields</strong><br>Each field replaces its <code>{TAG}</code> placeholder in the letterhead (e.g. <code>{RECIPIENT_NAME}</code>, <code>{RECIPIENT_ADDRESS}</code>).</p>
-          <p><strong>3. Write the content</strong><br>The styled editor fills the <code>{LETTER_BODY}</code> area.</p>
-          <p><strong>4. Generate</strong><br>Downloads instantly as <code>Generated_Letterhead.pdf</code>.</p>
-          <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
-          <p style="color:var(--muted)">Access is role-restricted. Activity is logged for compliance.</p>
+        <div class="card">
+          <h2>How it works</h2>
+          <div class="tips" id="help"></div>
         </div>
       </div>
     </div>
 
-    <div class="footer">SM Corporation - Letterhead Generator</div>
+    <div class="footer">SandalMist Resort &amp; Spa - Document Generator</div>
   </div>
 
   <script>
     document.addEventListener('DOMContentLoaded', function () {
 
-      var FIELDS = [];      // field definitions from the backend
-      var editor = null;    // the rich-text editor element (if a rich field exists)
+      var FORMS = {};        // { letter: {label, fields}, invoice: {...} }
+      var TEMPLATES = [];    // [{ key, label, form }]
+      var activeForm = null;
+      var curFields = [];    // field defs for the active form
+      var editor = null;
       var btn, btnLabel, btnSpinner;
 
       function $(id) { return document.getElementById(id); }
@@ -166,20 +169,31 @@
       function defaultValue(def) {
         if (def === 'today') {
           var d = new Date();
-          try { return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }); }
+          try { return d.toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' }); }
           catch (e) { return d.toDateString(); }
         }
-        return def;  // any other default is used as a literal string
+        return def;
       }
+
+      var HELP = {
+        letter:
+          '<p><strong>1. Pick a template</strong><br>Each maps to a branded letterhead.</p>' +
+          '<p><strong>2. Fill the fields</strong><br>Each value replaces its <code>{TAG}</code> in the template.</p>' +
+          '<p><strong>3. Write the content</strong><br>The styled editor fills <code>{LETTER_BODY}</code>.</p>' +
+          '<p><strong>4. Generate</strong><br>Downloads instantly as a PDF.</p>',
+        invoice:
+          '<p><strong>Flexible bill</strong><br>Leave <em>Room Charges</em> blank for a food-only bill, or <em>Food Items</em> blank for a room-only bill.</p>' +
+          '<p><strong>Line items</strong><br>Type one item per line, e.g.<br><code>Onion Pakoda : 3 x 200 = 600</code></p>' +
+          '<p><strong>Totals</strong><br>Enter Room Total, Food Total, Grand Total and Balance yourself (the values you compute).</p>' +
+          '<p><strong>Placeholders</strong><br>Each field fills its <code>{TAG}</code> in the invoice template (e.g. <code>{GUEST_NAME}</code>, <code>{FOOD_DETAILS}</code>, <code>{BALANCE}</code>).</p>'
+      };
 
       var TOOLBAR_HTML =
         '<div class="toolbar">' +
-          '<select data-tool="fontName" title="Font">' +
-            '<option value="">Font</option><option>Arial</option><option>Georgia</option>' +
-            '<option value="Times New Roman">Times New Roman</option><option>Verdana</option>' +
-            '<option value="Courier New">Courier New</option><option>Tahoma</option></select>' +
-          '<select data-tool="fontSize" title="Size">' +
-            '<option value="">Size</option><option value="2">Small</option>' +
+          '<select data-tool="fontName" title="Font"><option value="">Font</option><option>Arial</option>' +
+            '<option>Georgia</option><option value="Times New Roman">Times New Roman</option>' +
+            '<option>Verdana</option><option value="Courier New">Courier New</option><option>Tahoma</option></select>' +
+          '<select data-tool="fontSize" title="Size"><option value="">Size</option><option value="2">Small</option>' +
             '<option value="3" selected>Normal</option><option value="5">Large</option>' +
             '<option value="6">X-Large</option><option value="7">Heading</option></select>' +
           '<span class="divider"></span>' +
@@ -194,15 +208,13 @@
           '<button type="button" data-cmd="insertUnorderedList" title="Bullet list">List</button>' +
           '<button type="button" data-cmd="insertOrderedList" title="Numbered list">1.</button>' +
           '<span class="divider"></span>' +
-          '<label title="Text color" style="margin:0;display:flex;align-items:center">' +
-            '<input type="color" data-tool="foreColor" value="#1a237e"></label>' +
-          '<label title="Highlight" style="margin:0;display:flex;align-items:center">' +
-            '<input type="color" data-tool="hiliteColor" value="#ffff00"></label>' +
+          '<label title="Text color" style="margin:0;display:flex;align-items:center"><input type="color" data-tool="foreColor" value="#1f4d46"></label>' +
+          '<label title="Highlight" style="margin:0;display:flex;align-items:center"><input type="color" data-tool="hiliteColor" value="#ffff00"></label>' +
           '<span class="divider"></span>' +
           '<button type="button" data-cmd="removeFormat" title="Clear">Clear</button>' +
         '</div>';
 
-      /* ---------- RBAC session ---------- */
+      /* ---------- session ---------- */
       function loadSession() {
         if (!window.google || !google.script || !google.script.run) {
           $('gate').innerHTML = '<div style="color:#d32f2f">Open this from the deployed web app URL.</div>';
@@ -229,21 +241,56 @@
         $('userRole').textContent = info.role;
         $('userChip').style.visibility = 'visible';
 
+        FORMS = info.forms || {};
+        TEMPLATES = info.templates || [];
+
+        // Build a tab per form that actually has at least one template available to this user.
+        var tabsEl = $('tabs');
+        tabsEl.innerHTML = '';
+        var formKeys = Object.keys(FORMS).filter(function (fk) {
+          return TEMPLATES.some(function (t) { return t.form === fk; });
+        });
+        formKeys.forEach(function (fk) {
+          var b = document.createElement('button');
+          b.className = 'tab';
+          b.textContent = FORMS[fk].label || fk;
+          b.setAttribute('data-form', fk);
+          b.addEventListener('click', function () { switchTab(fk); });
+          tabsEl.appendChild(b);
+        });
+
+        $('gate').style.display = 'none';
+        $('app').style.display = 'block';
+
+        if (formKeys.length) switchTab(formKeys[0]);
+      }
+
+      /* ---------- tab switch ---------- */
+      function switchTab(formKey) {
+        activeForm = formKey;
+        curFields = (FORMS[formKey] && FORMS[formKey].fields) || [];
+
+        Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (t) {
+          t.classList.toggle('active', t.getAttribute('data-form') === formKey);
+        });
+
+        $('formTitle').textContent = 'Compose ' + (FORMS[formKey].label || '');
+        $('help').innerHTML = HELP[formKey] || '';
+        hideAlert();
+
+        // Templates for this form
         var sel = $('template');
-        (info.templates || []).forEach(function (t) {
+        sel.innerHTML = '<option value="">-- Select a template --</option>';
+        TEMPLATES.filter(function (t) { return t.form === formKey; }).forEach(function (t) {
           var o = document.createElement('option');
           o.value = t.key; o.textContent = t.label;
           sel.appendChild(o);
         });
 
-        FIELDS = info.fields || [];
-        buildFields(FIELDS);
-
-        $('gate').style.display = 'none';
-        $('app').style.display = 'grid';
+        buildFields(curFields);
       }
 
-      /* ---------- build dynamic fields ---------- */
+      /* ---------- build fields ---------- */
       function buildFields(fields) {
         var container = $('fields');
         container.innerHTML = '';
@@ -264,29 +311,24 @@
             ew.className = 'editor-wrap';
             ew.innerHTML = TOOLBAR_HTML +
               '<div class="editor" id="editor" contenteditable="true" data-placeholder="' +
-              escapeHtml(hint || 'Type the letter content...') + '"></div>';
+              escapeHtml(hint || 'Type the content...') + '"></div>';
             wrap.appendChild(ew);
           } else if (f.type === 'textarea') {
             var ta = document.createElement('textarea');
-            ta.id = 'fld_' + f.tag;
-            ta.placeholder = hint;
+            ta.id = 'fld_' + f.tag; ta.placeholder = hint;
             if (f.default) ta.value = defaultValue(f.default);
             wrap.appendChild(ta);
           } else {
             var inp = document.createElement('input');
-            inp.type = 'text';
-            inp.id = 'fld_' + f.tag;
-            inp.placeholder = hint;
+            inp.type = 'text'; inp.id = 'fld_' + f.tag; inp.placeholder = hint;
             if (f.default) inp.value = defaultValue(f.default);
             wrap.appendChild(inp);
           }
 
           var err = document.createElement('div');
-          err.className = 'field-error';
-          err.id = 'e_' + f.tag;
+          err.className = 'field-error'; err.id = 'e_' + f.tag;
           err.textContent = f.label + ' is required.';
           wrap.appendChild(err);
-
           container.appendChild(wrap);
         });
 
@@ -294,16 +336,13 @@
         if (editor) wireToolbar(editor);
       }
 
-      /* ---------- rich text toolbar ---------- */
+      /* ---------- toolbar ---------- */
       function wireToolbar(ed) {
         var tb = ed.parentNode.querySelector('.toolbar');
         if (!tb) return;
-        var cmdButtons = tb.querySelectorAll('button[data-cmd]');
-        Array.prototype.forEach.call(cmdButtons, function (b) {
+        Array.prototype.forEach.call(tb.querySelectorAll('button[data-cmd]'), function (b) {
           b.addEventListener('click', function () {
-            ed.focus();
-            document.execCommand(b.getAttribute('data-cmd'), false, null);
-            refreshState(tb);
+            ed.focus(); document.execCommand(b.getAttribute('data-cmd'), false, null); refreshState(tb);
           });
         });
         Array.prototype.forEach.call(tb.querySelectorAll('[data-tool]'), function (ctrl) {
@@ -312,20 +351,15 @@
           ctrl.addEventListener(evt, function () {
             ed.focus();
             if (tool === 'hiliteColor') {
-              if (!document.execCommand('hiliteColor', false, ctrl.value)) {
-                document.execCommand('backColor', false, ctrl.value);
-              }
-            } else if (ctrl.value !== '') {
-              document.execCommand(tool, false, ctrl.value);
-            }
+              if (!document.execCommand('hiliteColor', false, ctrl.value)) document.execCommand('backColor', false, ctrl.value);
+            } else if (ctrl.value !== '') { document.execCommand(tool, false, ctrl.value); }
           });
         });
         ed.addEventListener('keyup', function () { refreshState(tb); });
         ed.addEventListener('mouseup', function () { refreshState(tb); });
       }
-
       function refreshState(tb) {
-        ['bold', 'italic', 'underline'].forEach(function (cmd) {
+        ['bold','italic','underline'].forEach(function (cmd) {
           var b = tb.querySelector('button[data-cmd="' + cmd + '"]');
           if (b) { try { b.classList.toggle('active', document.queryCommandState(cmd)); } catch (e) {} }
         });
@@ -335,20 +369,17 @@
       function submitForm() {
         clearErrors();
         var template = $('template').value.trim();
-        var data = {};
-        var firstBad = null;
+        var data = {}; var firstBad = null;
+        if (!template) { markError('template'); firstBad = 'template'; }
 
-        if (!template) { markError('template'); firstBad = firstBad || 'template'; }
-
-        FIELDS.forEach(function (f) {
+        curFields.forEach(function (f) {
           var val, text;
           if (f.type === 'rich') {
             val = editor ? editor.innerHTML.trim() : '';
             text = editor ? (editor.innerText || editor.textContent || '').trim() : '';
           } else {
             var el = $('fld_' + f.tag);
-            val = el ? el.value.trim() : '';
-            text = val;
+            val = el ? el.value.trim() : ''; text = val;
           }
           data[f.tag] = val;
           if (f.required && !text) { markError(f.tag); firstBad = firstBad || f.tag; }
@@ -356,8 +387,7 @@
 
         if (firstBad) { showAlert('error', 'Please fill in all required fields.'); return; }
 
-        setLoading(true);
-        hideAlert();
+        setLoading(true); hideAlert();
         google.script.run
           .withSuccessHandler(onGenerated)
           .withFailureHandler(function (err) {
@@ -369,15 +399,11 @@
 
       function onGenerated(res) {
         setLoading(false);
-        if (!res || !res.ok) {
-          showAlert('error', (res && res.error) ? res.error : 'Unknown error generating PDF.');
-          return;
-        }
-        triggerDownload(res.base64, res.fileName || 'Generated_Letterhead.pdf');
-        showAlert('success', 'Your letterhead PDF has been generated and downloaded.');
+        if (!res || !res.ok) { showAlert('error', (res && res.error) ? res.error : 'Unknown error generating PDF.'); return; }
+        triggerDownload(res.base64, res.fileName || 'Generated.pdf');
+        showAlert('success', 'Your PDF has been generated and downloaded.');
       }
 
-      /* ---------- base64 -> download ---------- */
       function triggerDownload(base64, fileName) {
         try {
           var bin = atob(base64);
@@ -389,12 +415,9 @@
           a.href = url; a.download = fileName;
           document.body.appendChild(a); a.click(); document.body.removeChild(a);
           setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
-        } catch (e) {
-          showAlert('error', 'Could not start download: ' + e.message);
-        }
+        } catch (e) { showAlert('error', 'Could not start download: ' + e.message); }
       }
 
-      /* ---------- UI helpers ---------- */
       function setLoading(loading) {
         btn.disabled = loading;
         btnSpinner.style.display = loading ? 'block' : 'none';
@@ -407,18 +430,14 @@
         if (fe) fe.classList.add('show');
       }
       function clearErrors() {
-        var bad = document.querySelectorAll('.invalid');
-        Array.prototype.forEach.call(bad, function (n) { n.classList.remove('invalid'); });
-        var errs = document.querySelectorAll('.field-error.show');
-        Array.prototype.forEach.call(errs, function (n) { n.classList.remove('show'); });
+        Array.prototype.forEach.call(document.querySelectorAll('.invalid'), function (n) { n.classList.remove('invalid'); });
+        Array.prototype.forEach.call(document.querySelectorAll('.field-error.show'), function (n) { n.classList.remove('show'); });
       }
       function showAlert(type, msg) { var a = $('alert'); a.className = 'alert show ' + type; a.textContent = msg; }
       function hideAlert() { $('alert').className = 'alert'; }
 
       /* ---------- init ---------- */
-      btn = $('generateBtn');
-      btnLabel = $('btnLabel');
-      btnSpinner = $('btnSpinner');
+      btn = $('generateBtn'); btnLabel = $('btnLabel'); btnSpinner = $('btnSpinner');
       btn.addEventListener('click', submitForm);
       loadSession();
     });

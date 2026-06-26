@@ -54,6 +54,12 @@ const TEMPLATES = {
     tagline: 'The Hill Top habitat',
     color: '#1a237e',
     footer: 'Confidential - Internal Use Only'
+  },
+  'invoice': {
+    label: 'Guest Invoice',
+    type: 'doc',
+    form: 'invoice',                               // belongs to the Invoice tab
+    docId: 'PASTE_INVOICE_GOOGLE_DOC_ID_HERE'      // import the invoice .docx, convert to Google Doc, paste its ID
   }
 };
 
@@ -69,28 +75,68 @@ const TEMPLATE_ROLE_RESTRICTIONS = {
   // 'memo': ['Admin', 'Manager']   // e.g. only Admins/Managers may issue Internal Memos
 };
 
-// 6) FORM FIELDS -> template placeholders.
-//    Each field's `tag` becomes the placeholder {TAG} you put in your Doc/Slides template box.
-//    The web form builds an input for every field automatically. Add/remove to match your boxes.
-//    type: 'text' (single line) | 'textarea' (multi-line) | 'rich' (the styled editor; use ONE).
-//    e.g. put {RECIPIENT_NAME} in the name box, {RECIPIENT_ADDRESS} in the address box, etc.
-const FIELDS = [
-  { tag: 'RECIPIENT_NAME',    label: 'Recipient Name',     type: 'text',     required: true,
-    placeholder: 'e.g. Mr. Michael Johnson' },
-  { tag: 'RECIPIENT_COMPANY', label: 'Recipient Company',  type: 'text',     required: false,
-    placeholder: 'e.g. Nexus Technologies Pvt. Ltd.' },
-  { tag: 'DATE',              label: 'Date',               type: 'text',     required: false, default: 'today',
-    placeholder: 'e.g. 26 June 2026' },
-  { tag: 'SUBJECT',           label: 'Subject',            type: 'text',     required: false,
-    placeholder: 'e.g. Buffet Pricing Proposal for your event' },
-  { tag: 'LETTER_BODY',       label: 'Letter Content',     type: 'rich',     required: true,
-    placeholder: 'Type your letter here. Select text and use the toolbar above to make it Bold, ' +
-                 'change colour/font, align, or add bullet lists. Press Enter for a new paragraph.' }
-];
+// 6) FORMS -> each form is a tab in the app with its own set of fields. A template belongs to a
+//    form via its `form` property (default 'letter'). Each field's `tag` becomes the placeholder
+//    {TAG} you put in the template. type: 'text' | 'textarea' | 'rich' (styled editor; max one).
+const FORMS = {
+  letter: {
+    label: 'Letter',
+    fields: [
+      { tag: 'RECIPIENT_NAME',    label: 'Recipient Name',    type: 'text',     required: true,
+        placeholder: 'e.g. Mr. Michael Johnson' },
+      { tag: 'RECIPIENT_COMPANY', label: 'Recipient Company', type: 'text',     required: false,
+        placeholder: 'e.g. Nexus Technologies Pvt. Ltd.' },
+      { tag: 'DATE',              label: 'Date',              type: 'text',     required: false, default: 'today',
+        placeholder: 'e.g. 26 June 2026' },
+      { tag: 'SUBJECT',           label: 'Subject',           type: 'text',     required: false,
+        placeholder: 'e.g. Buffet Pricing Proposal for your event' },
+      { tag: 'LETTER_BODY',       label: 'Letter Content',    type: 'rich',     required: true,
+        placeholder: 'Type your letter here. Select text and use the toolbar to make it Bold, ' +
+                     'change colour/font, align, or add bullet lists. Press Enter for a new paragraph.' }
+    ]
+  },
+  invoice: {
+    label: 'Invoice',
+    fields: [
+      { tag: 'INVOICE_NO',   label: 'Invoice No.',          type: 'text',     required: false,
+        placeholder: 'e.g. SM/2026/0521' },
+      { tag: 'INVOICE_DATE', label: 'Invoice Date',         type: 'text',     required: false, default: 'today',
+        placeholder: 'e.g. 21 June 2026' },
+      { tag: 'GUEST_NAME',   label: 'Guest Name',           type: 'text',     required: true,
+        placeholder: 'e.g. Vivek' },
+      { tag: 'CHECK_IN',     label: 'Check-in Date',        type: 'text',     required: false,
+        placeholder: 'e.g. 19/06/2026' },
+      { tag: 'CHECK_OUT',    label: 'Check-out Date',       type: 'text',     required: false,
+        placeholder: 'e.g. 21/06/2026' },
+      { tag: 'NUM_ROOMS',    label: 'No. of Rooms',         type: 'text',     required: false,
+        placeholder: 'e.g. 1 Premium Room' },
+      { tag: 'NUM_GUESTS',   label: 'No. of Guests',        type: 'text',     required: false,
+        placeholder: 'e.g. 05' },
+      { tag: 'MEAL_PLAN',    label: 'Meal Plan',            type: 'text',     required: false,
+        placeholder: 'e.g. CP' },
+      { tag: 'ROOM_DETAILS', label: 'Room Charges (one per line)', type: 'textarea', required: false,
+        placeholder: 'ROOM TARIFF (6000 x 2 NIGHTS) = 12000\n(leave blank for a food-only bill)' },
+      { tag: 'ROOM_TOTAL',   label: 'Room Total (Rs.)',     type: 'text',     required: false,
+        placeholder: 'e.g. 12000' },
+      { tag: 'FOOD_DETAILS', label: 'Food Items (one per line)', type: 'textarea', required: false,
+        placeholder: 'Onion Pakoda : 3 x 200 = 600\nPaneer Butter Masala : 1 x 350 = 350\n(leave blank for a room-only bill)' },
+      { tag: 'FOOD_TOTAL',   label: 'Food Total (Rs.)',     type: 'text',     required: false,
+        placeholder: 'e.g. 5685' },
+      { tag: 'GRAND_TOTAL',  label: 'Grand Total (Rs.)',    type: 'text',     required: false,
+        placeholder: 'e.g. 17685' },
+      { tag: 'ADVANCE_PAID', label: 'Advance Paid (Rs.)',   type: 'text',     required: false,
+        placeholder: 'e.g. 0' },
+      { tag: 'BALANCE',      label: 'Balance Payable (Rs.)', type: 'text',    required: false,
+        placeholder: 'e.g. 17685' }
+    ]
+  }
+};
 
-function fieldDef_(tag) {
-  for (var i = 0; i < FIELDS.length; i++) if (FIELDS[i].tag === tag) return FIELDS[i];
-  return null;
+// Returns the field list for a template (by its `form`, default 'letter').
+function fieldsForTemplate_(tpl) {
+  var formKey = (tpl && tpl.form) ? tpl.form : 'letter';
+  var form = FORMS[formKey] || FORMS.letter;
+  return form.fields;
 }
 
 
@@ -232,16 +278,21 @@ function getSessionInfo() {
   var allowed = [];
   Object.keys(TEMPLATES).forEach(function (key) {
     if (roleCanUseTemplate_(user.role, key)) {
-      allowed.push({ key: key, label: TEMPLATES[key].label });
+      allowed.push({ key: key, label: TEMPLATES[key].label, form: TEMPLATES[key].form || 'letter' });
     }
+  });
+  // Build a plain forms map (label + fields) for the frontend tabs.
+  var forms = {};
+  Object.keys(FORMS).forEach(function (k) {
+    forms[k] = { label: FORMS[k].label, fields: FORMS[k].fields };
   });
   return {
     authorised: true,
+    forms: forms,
     name: user.name,
     email: user.email,
     role: user.role,
-    templates: allowed,
-    fields: FIELDS
+    templates: allowed
   };
 }
 
@@ -270,9 +321,15 @@ function generateLetter(formData) {
 
     if (!templateKey) return { ok: false, error: 'Please select a template.' };
 
+    var tpl = TEMPLATES[templateKey];
+    if (!tpl) {
+      return { ok: false, error: 'Template "' + templateKey + '" is not configured in Code.gs.' };
+    }
+    var fieldList = fieldsForTemplate_(tpl);
+
     // Validate required fields (rich fields are checked by their stripped text).
     var missing = [];
-    FIELDS.forEach(function (f) {
+    fieldList.forEach(function (f) {
       if (!f.required) return;
       var raw = String(fields[f.tag] || '');
       var text = (f.type === 'rich') ? stripHtml_(raw).trim() : raw.trim();
@@ -286,16 +343,11 @@ function generateLetter(formData) {
     }
 
     // Apply field defaults (e.g. DATE -> today) if the client left them blank.
-    FIELDS.forEach(function (f) {
+    fieldList.forEach(function (f) {
       if (f.default === 'today' && !String(fields[f.tag] || '').trim()) {
         fields[f.tag] = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd MMMM yyyy');
       }
     });
-
-    var tpl = TEMPLATES[templateKey];
-    if (!tpl) {
-      return { ok: false, error: 'Template "' + templateKey + '" is not configured in Code.gs.' };
-    }
 
     // ---- 3. RENDER THE PDF (dispatch by template type) ------------------------------------
     var pdfBlob;
@@ -303,14 +355,14 @@ function generateLetter(formData) {
       if (!tpl.docId || tpl.docId.indexOf('PASTE_') === 0) {
         return { ok: false, error: 'Template "' + tpl.label + '" has no Doc ID set in Code.gs.' };
       }
-      pdfBlob = renderFromDocTemplate_(tpl.docId, fields, user, tpl.label);
+      pdfBlob = renderFromDocTemplate_(tpl.docId, fields, user, tpl.label, fieldList);
     } else if (tpl.type === 'slides') {
       if (!tpl.slidesId || tpl.slidesId.indexOf('PASTE_') === 0) {
         return { ok: false, error: 'Template "' + tpl.label + '" has no Slides ID set in Code.gs.' };
       }
-      pdfBlob = renderFromSlidesTemplate_(tpl.slidesId, fields, user, tpl.label);
+      pdfBlob = renderFromSlidesTemplate_(tpl.slidesId, fields, user, tpl.label, fieldList);
     } else {
-      pdfBlob = renderFromBuiltinTemplate_(tpl, fields);
+      pdfBlob = renderFromBuiltinTemplate_(tpl, fields, fieldList);
     }
 
     // ---- 4. LOG (audit trail) -------------------------------------------------------------
@@ -355,8 +407,8 @@ function getTemplateFile_(fileId, label) {
  * inserted with formatting; all other fields are replaced as plain text. Empty fields clear the
  * placeholder so no stray {TAG} is left behind.
  */
-function applyFieldsToDoc_(body, fields) {
-  FIELDS.forEach(function (f) {
+function applyFieldsToDoc_(body, fields, fieldList) {
+  fieldList.forEach(function (f) {
     var val = String(fields[f.tag] == null ? '' : fields[f.tag]);
     if (f.type === 'rich') {
       insertRichBody_(body, '{' + f.tag + '}', val);
@@ -370,8 +422,8 @@ function applyFieldsToDoc_(body, fields) {
  * Replaces every {TAG} in a Slides deck with its field value (plain text only — Slides can't
  * take rich formatting, so rich fields are flattened to text).
  */
-function applyFieldsToSlides_(pres, fields) {
-  FIELDS.forEach(function (f) {
+function applyFieldsToSlides_(pres, fields, fieldList) {
+  fieldList.forEach(function (f) {
     var val = String(fields[f.tag] == null ? '' : fields[f.tag]);
     // Rich field: convert HTML to text but KEEP line breaks/paragraphs (Slides honors \n).
     if (f.type === 'rich') val = htmlToText_(val);
@@ -382,7 +434,7 @@ function applyFieldsToSlides_(pres, fields) {
 /**
  * DOC TEMPLATE: copy the Doc, replace all {TAG} placeholders, export PDF, delete copy.
  */
-function renderFromDocTemplate_(docId, fields, user, label) {
+function renderFromDocTemplate_(docId, fields, user, label, fieldList) {
   var srcFile = getTemplateFile_(docId, label);
   // A doc template must be a NATIVE Google Doc, not an uploaded Word .docx — DocumentApp
   // cannot open .docx and throws "The document is inaccessible". Detect and explain.
@@ -394,7 +446,7 @@ function renderFromDocTemplate_(docId, fields, user, label) {
   var copyId = copy.getId();
   try {
     var doc = DocumentApp.openById(copyId);
-    applyFieldsToDoc_(doc.getBody(), fields);
+    applyFieldsToDoc_(doc.getBody(), fields, fieldList);
     doc.saveAndClose();
     return DriveApp.getFileById(copyId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
   } finally {
@@ -405,12 +457,12 @@ function renderFromDocTemplate_(docId, fields, user, label) {
 /**
  * SLIDES TEMPLATE: copy the deck, replace all {TAG} placeholders (plain text), export PDF, delete.
  */
-function renderFromSlidesTemplate_(slidesId, fields, user, label) {
+function renderFromSlidesTemplate_(slidesId, fields, user, label, fieldList) {
   var copy = getTemplateFile_(slidesId, label).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
   var copyId = copy.getId();
   try {
     var pres = SlidesApp.openById(copyId);
-    applyFieldsToSlides_(pres, fields);
+    applyFieldsToSlides_(pres, fields, fieldList);
     pres.saveAndClose();
     return DriveApp.getFileById(copyId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
   } finally {
@@ -423,7 +475,7 @@ function renderFromSlidesTemplate_(slidesId, fields, user, label) {
  * recipient block is composed from all non-rich fields (in order), and the rich field becomes
  * the letter body.
  */
-function renderFromBuiltinTemplate_(tpl, fields) {
+function renderFromBuiltinTemplate_(tpl, fields, fieldList) {
   var doc = DocumentApp.create('TEMP_Letter_' + Date.now());
   var docId = doc.getId();
   try {
@@ -453,7 +505,7 @@ function renderFromBuiltinTemplate_(tpl, fields) {
       .setAlignment(DocumentApp.HorizontalAlignment.RIGHT).setForegroundColor('#444444');
 
     var bodyHtml = '';
-    FIELDS.forEach(function (f) {
+    fieldList.forEach(function (f) {
       var val = String(fields[f.tag] == null ? '' : fields[f.tag]);
       if (f.type === 'rich') { bodyHtml = val; return; }
       if (!val.trim()) return;

@@ -236,12 +236,12 @@ function generateLetter(formData) {
       if (!tpl.docId || tpl.docId.indexOf('PASTE_') === 0) {
         return { ok: false, error: 'Template "' + tpl.label + '" has no Doc ID set in Code.gs.' };
       }
-      pdfBlob = renderFromDocTemplate_(tpl.docId, recipient, bodyHtml, user);
+      pdfBlob = renderFromDocTemplate_(tpl.docId, recipient, bodyHtml, user, tpl.label);
     } else if (tpl.type === 'slides') {
       if (!tpl.slidesId || tpl.slidesId.indexOf('PASTE_') === 0) {
         return { ok: false, error: 'Template "' + tpl.label + '" has no Slides ID set in Code.gs.' };
       }
-      pdfBlob = renderFromSlidesTemplate_(tpl.slidesId, recipient, bodyHtml, user);
+      pdfBlob = renderFromSlidesTemplate_(tpl.slidesId, recipient, bodyHtml, user, tpl.label);
     } else {
       pdfBlob = renderFromBuiltinTemplate_(tpl, recipient, bodyHtml);
     }
@@ -262,10 +262,24 @@ function generateLetter(formData) {
 }
 
 /**
+ * Opens a template file by ID, converting Drive's cryptic "Document is missing" / access errors
+ * into a clear, actionable message that names the template and the likely fix.
+ */
+function getTemplateFile_(fileId, label) {
+  try {
+    return DriveApp.getFileById(fileId);
+  } catch (e) {
+    throw new Error('Template "' + label + '" could not be opened (ID: ' + fileId + '). ' +
+      'Make sure the file still exists (not trashed) and is owned by, or shared with, the ' +
+      'Google account that runs this web app. Then redeploy a new version.');
+  }
+}
+
+/**
  * DOC TEMPLATE: copy the Doc, replace {RECIPIENT_DATA} and {LETTER_BODY}, export PDF, delete copy.
  */
-function renderFromDocTemplate_(docId, recipient, bodyHtml, user) {
-  var copy = DriveApp.getFileById(docId).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
+function renderFromDocTemplate_(docId, recipient, bodyHtml, user, label) {
+  var copy = getTemplateFile_(docId, label).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
   var copyId = copy.getId();
   try {
     var doc = DocumentApp.openById(copyId);
@@ -336,8 +350,8 @@ function renderFromBuiltinTemplate_(tpl, recipient, bodyHtml) {
  * NOTE: Slides replaceAllText is PLAIN text only — rich formatting from the editor (colors,
  * fonts) is not carried into a Slides template; the body inherits the placeholder's own style.
  */
-function renderFromSlidesTemplate_(slidesId, recipient, bodyHtml, user) {
-  var copy = DriveApp.getFileById(slidesId).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
+function renderFromSlidesTemplate_(slidesId, recipient, bodyHtml, user, label) {
+  var copy = getTemplateFile_(slidesId, label).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
   var copyId = copy.getId();
   try {
     var pres = SlidesApp.openById(copyId);

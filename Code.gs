@@ -59,6 +59,7 @@ const TEMPLATES = {
     label: 'Guest Invoice (with GST)',
     type: 'doc',
     form: 'invoice',
+    gst: true,                                         // shows GST fields & adds GST to totals
     docId: 'PASTE_INVOICE_GST_GOOGLE_DOC_ID_HERE'      // import 05_Guest_Invoice_GST.docx, convert, paste ID
   },
   'invoice_nogst': {
@@ -119,9 +120,14 @@ const FORMS = {
       { tag: 'ROOM_DETAILS', label: 'Room Charges',    type: 'lineitems', totalTag: 'ROOM_TOTAL',
         itemPlaceholder: 'e.g. Premium Room Tariff' },
       { tag: 'ROOM_TOTAL',   label: 'Room Total (Rs.)', type: 'computed' },
+      { tag: 'ROOM_GST_RATE', label: 'Room GST %',     type: 'gstrate', gstFor: 'ROOM', gstOnly: true },
+      { tag: 'ROOM_GST_AMT',  label: 'Room GST (Rs.)', type: 'computed', gstOnly: true },
       { tag: 'FOOD_DETAILS', label: 'Food Items',      type: 'lineitems', totalTag: 'FOOD_TOTAL',
         itemPlaceholder: 'e.g. Paneer Butter Masala' },
       { tag: 'FOOD_TOTAL',   label: 'Food Total (Rs.)', type: 'computed' },
+      { tag: 'FOOD_GST_RATE', label: 'Food GST %',     type: 'gstrate', gstFor: 'FOOD', gstOnly: true },
+      { tag: 'FOOD_GST_AMT',  label: 'Food GST (Rs.)', type: 'computed', gstOnly: true },
+      { tag: 'TOTAL_GST',    label: 'Total GST (Rs.)', type: 'computed', gstOnly: true },
       { tag: 'GRAND_TOTAL',  label: 'Grand Total (Rs.)', type: 'computed' },
       { tag: 'ADVANCE_PAID', label: 'Advance Paid (Rs.)', type: 'number', placeholder: '0' },
       { tag: 'BALANCE',      label: 'Balance Payable (Rs.)', type: 'computed' }
@@ -306,7 +312,8 @@ function getSessionInfo() {
   var allowed = [];
   Object.keys(TEMPLATES).forEach(function (key) {
     if (roleCanUseTemplate_(user.role, key)) {
-      allowed.push({ key: key, label: TEMPLATES[key].label, form: TEMPLATES[key].form || 'letter' });
+      allowed.push({ key: key, label: TEMPLATES[key].label, form: TEMPLATES[key].form || 'letter',
+                     gst: TEMPLATES[key].gst || false });
     }
   });
   // Build a plain forms map (label + fields) for the frontend tabs.

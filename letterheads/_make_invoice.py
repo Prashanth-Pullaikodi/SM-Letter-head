@@ -102,15 +102,23 @@ def build_invoice(include_gst, filename):
     run(ft, "Food Total: Rs. ", size=10, bold=True, color=GREEN); run(ft, "{FOOD_TOTAL}", size=10, bold=True)
 
     doc.add_paragraph().paragraph_format.space_after = Pt(4)
-    tot = doc.add_table(rows=3, cols=2); no_borders(tot); tot.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    rows = []
+    if include_gst:
+        rows.append(("Room GST ({ROOM_GST_RATE}%): ", "ROOM_GST_AMT", False))
+        rows.append(("Food GST ({FOOD_GST_RATE}%): ", "FOOD_GST_AMT", False))
+        rows.append(("Total GST: ", "TOTAL_GST", False))
+    rows.append(("Grand Total: ", "GRAND_TOTAL", False))
+    rows.append(("Advance Paid: ", "ADVANCE_PAID", False))
+    rows.append(("BALANCE PAYABLE: ", "BALANCE", True))
+
+    tot = doc.add_table(rows=len(rows), cols=2); no_borders(tot); tot.alignment = WD_TABLE_ALIGNMENT.RIGHT
     def totrow(row, label, tag, big=False):
         lcell = row.cells[0].paragraphs[0]; lcell.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         run(lcell, label, size=11 if big else 10, bold=True, color=GREEN if big else CHARCOAL)
         vcell = row.cells[1].paragraphs[0]; vcell.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         run(vcell, "Rs. {" + tag + "}", size=11 if big else 10, bold=True, color=GREEN if big else CHARCOAL)
-    totrow(tot.rows[0], "Grand Total: ", "GRAND_TOTAL")
-    totrow(tot.rows[1], "Advance Paid: ", "ADVANCE_PAID")
-    totrow(tot.rows[2], "BALANCE PAYABLE: ", "BALANCE", big=True)
+    for i, (lab, tag, big) in enumerate(rows):
+        totrow(tot.rows[i], lab, tag, big)
 
     foot = doc.add_paragraph(); foot.paragraph_format.space_before = Pt(20); pbottom(foot, "C9A24B", 8)
     fp2 = doc.add_paragraph(); fp2.alignment = WD_ALIGN_PARAGRAPH.CENTER

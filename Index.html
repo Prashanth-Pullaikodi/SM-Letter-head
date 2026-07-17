@@ -953,22 +953,28 @@
         });
       }
 
+      // GST slab per line item (rate-based) — matches the backend.
+      function gstRateForRate(cat, rate) {
+        return (cat === 'food' || cat === 'other') ? 18 : (num(rate) > 7500 ? 18 : 5);
+      }
+
       function enabledModules() {
         var out = [];
         Array.prototype.forEach.call(document.querySelectorAll('.prop-mod'), function (w) {
           var en = w.querySelector('.prop-en'); if (!en || !en.checked) return;
           var cat = w.getAttribute('data-cat');
           var tbody = w.querySelector('tbody');
-          var subtotal = 0;
+          var subtotal = 0, rows = [], maxRate = 0;
           Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (tr) {
-            var amt = num(tr.querySelector('.li-qty').value) * num(tr.querySelector('.li-rate').value);
+            var rate = num(tr.querySelector('.li-rate').value);
+            var amt = num(tr.querySelector('.li-qty').value) * rate;
             tr.querySelector('.li-amt').textContent = amt ? amt.toFixed(0) : '0';
+            if (amt) { var gr = gstRateForRate(cat, rate); rows.push({ amt: amt, gstRate: gr }); if (gr > maxRate) maxRate = gr; }
             subtotal += amt;
           });
-          var gstRate = (cat === 'food' || cat === 'other') ? 18 : (subtotal > 7500 ? 18 : 5);
           var subEl = w.querySelector('.sub'); if (subEl) subEl.textContent = moneyIN(subtotal);
-          var grEl = w.querySelector('.gr'); if (grEl) grEl.textContent = gstRate;
-          out.push({ key: w.getAttribute('data-module'), cat: cat, subtotal: subtotal, gstRate: gstRate, wrap: w });
+          var grEl = w.querySelector('.gr'); if (grEl) grEl.textContent = maxRate || '-';
+          out.push({ key: w.getAttribute('data-module'), cat: cat, subtotal: subtotal, rows: rows, wrap: w });
         });
         return out;
       }
@@ -983,9 +989,11 @@
         if (discAmt < 0) discAmt = 0;
         var cgst = 0, sgst = 0;
         mods.forEach(function (m) {
-          var mDisc = taxable > 0 ? discAmt * (m.subtotal / taxable) : 0;
-          var gst = (m.subtotal - mDisc) * m.gstRate / 100;
-          cgst += gst / 2; sgst += gst / 2;
+          m.rows.forEach(function (r) {
+            var lineDisc = taxable > 0 ? discAmt * (r.amt / taxable) : 0;
+            var gst = (r.amt - lineDisc) * r.gstRate / 100;
+            cgst += gst / 2; sgst += gst / 2;
+          });
         });
         var grand = (taxable - discAmt) + cgst + sgst;
         var s = $('prop_summary');

@@ -343,11 +343,13 @@ function getMenu_() {
  *  PROPOSAL BUILDER  ->  Google Doc  ->  PDF + DOCX
  * ============================================================================================ */
 
-// GST rate rule: rooms/hall/amphitheater = 5% if subtotal <= 7500 else 18%; food/other = 18%.
-function gstRateForCategory_(key, subtotal) {
+// GST rate rule: rooms/hall/amphitheater = 5% if the per-unit RATE <= 7500 else 18%;
+// food/other = 18%. Basing it on the per-unit rate handles per-head / per-night packages
+// correctly (e.g. Rs.1,800/head -> 5% even when the total is large).
+function gstRateForItem_(key, rate) {
   key = String(key).toLowerCase();
   if (key === 'food' || key === 'other') return 18;
-  return subtotal > 7500 ? 18 : 5;
+  return num_(rate) > 7500 ? 18 : 5;
 }
 
 // Indian-grouped integer formatting: 1234567 -> 12,34,567
@@ -378,7 +380,7 @@ function generateProposal(data) {
     });
     if (!modules.length) return { ok: false, error: 'Add at least one service item to the proposal.' };
 
-    // ---- Compute money ----
+    // ---- Compute money (GST slab is decided PER LINE by its per-unit rate) ----
     modules.forEach(function (m) {
       m.rows = [];
       m.subtotal = 0;
@@ -389,9 +391,12 @@ function generateProposal(data) {
         if (!name && !qty && !rate) return;
         var amt = qty * rate;
         m.subtotal += amt;
-        m.rows.push({ name: name || 'Item', qty: qty, unit: unit, rate: rate, amt: amt });
+        // Rooms/Hall/Amphitheater: slab from the per-unit RATE (per head/night); Food/Other: 18%.
+        m.rows.push({ name: name || 'Item', qty: qty, unit: unit, rate: rate, amt: amt,
+                      gstRate: gstRateForItem_(m.key, rate) });
       });
-      m.gstRate = gstRateForCategory_(m.key, m.subtotal);
+      // Section's representative rate (for any display) = the highest line rate in the section.
+      m.gstRate = m.rows.reduce(function (a, r) { return Math.max(a, r.gstRate); }, 0) || 18;
     });
 
     var taxable = 0;
@@ -402,20 +407,19 @@ function generateProposal(data) {
     var discountAmt = discountType === 'percent' ? taxable * discountVal / 100 : Math.min(discountVal, taxable);
     if (discountAmt < 0) discountAmt = 0;
 
-    // Per-module net (proportional discount) + GST grouped by rate.
+    // Per-line net (proportional discount) + GST grouped by rate -> CGST/SGST.
     var gstGroups = {}; // rate -> { taxable, cgst, sgst }
     var totalCgst = 0, totalSgst = 0;
     modules.forEach(function (m) {
-      var mDisc = taxable > 0 ? discountAmt * (m.subtotal / taxable) : 0;
-      m.net = m.subtotal - mDisc;
-      var gst = m.net * m.gstRate / 100;
-      var half = gst / 2;
-      totalCgst += half; totalSgst += half;
-      var key = String(m.gstRate);
-      if (!gstGroups[key]) gstGroups[key] = { taxable: 0, cgst: 0, sgst: 0 };
-      gstGroups[key].taxable += m.net;
-      gstGroups[key].cgst += half;
-      gstGroups[key].sgst += half;
+      m.rows.forEach(function (r) {
+        var lineDisc = taxable > 0 ? discountAmt * (r.amt / taxable) : 0;
+        var net = r.amt - lineDisc;
+        var half = net * r.gstRate / 100 / 2;
+        totalCgst += half; totalSgst += half;
+        var key = String(r.gstRate);
+        if (!gstGroups[key]) gstGroups[key] = { taxable: 0, cgst: 0, sgst: 0 };
+        gstGroups[key].taxable += net; gstGroups[key].cgst += half; gstGroups[key].sgst += half;
+      });
     });
     var netTaxable = taxable - discountAmt;
     var grand = netTaxable + totalCgst + totalSgst;

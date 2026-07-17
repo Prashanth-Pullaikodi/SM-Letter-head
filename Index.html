@@ -140,6 +140,12 @@
     </div>
 
     <div id="app" style="display:none">
+      <div id="brandbar" style="display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-bottom:12px;font-size:.82rem;color:var(--muted);flex-wrap:wrap">
+        <span>Brand logo:</span>
+        <span id="logo_status">—</span>
+        <label class="li-add" style="cursor:pointer;margin:0">Upload / Change
+          <input type="file" id="app_logo" accept="image/png,image/jpeg,image/jpg,image/webp" style="display:none"></label>
+      </div>
       <div class="tabs" id="tabs"></div>
       <div class="grid">
         <div class="card">
@@ -182,6 +188,7 @@
       var MENU = {};         // { Starters:[{name,rate}], ... } for the Food menu picker
       var SETTINGS = { inclusions: [], exclusions: [], terms: [], company: {} };
       var HAS_LOGO = false;  // whether a company logo is on file
+      var LOGO_DATAURL = ''; // stored logo as a data URL (for the watermark)
       var NEXT_PROP = '';    // next proposal number
       var DEFAULT_TERMS = '';
       var WATERMARK_PNG = '';  // base64 PNG of the tiled watermark (built from an uploaded logo)
@@ -306,6 +313,15 @@
 
         $('gate').style.display = 'none';
         $('app').style.display = 'block';
+
+        // One-time brand logo (used on all documents + the watermark).
+        $('logo_status').textContent = HAS_LOGO ? '✓ on file' : '(none yet)';
+        $('app_logo').addEventListener('change', function () { uploadLogo(this); });
+        if (HAS_LOGO) {
+          google.script.run.withSuccessHandler(function (r) {
+            if (r && r.ok) { LOGO_DATAURL = r.dataUrl; preloadWatermarkLogo(); }
+          }).getLogoDataUrl();
+        }
 
         if (formKeys.length) switchTab(formKeys[0]);
       }
@@ -690,12 +706,6 @@
       function buildProposalForm() {
         var c = $('fields');
         c.innerHTML =
-          '<div class="prop-mod" style="padding:12px 14px;margin-bottom:14px">' +
-            '<label style="margin:0"><strong>Company Logo</strong> ' +
-              '<span id="logo_status" style="font-weight:400;color:var(--muted);font-size:.8rem"></span></label>' +
-            '<input type="file" id="prop_logo" accept="image/png,image/jpeg,image/jpg,image/webp" style="margin-top:8px">' +
-            '<div style="font-size:.75rem;color:var(--muted);margin-top:4px">PNG/JPG/WEBP. Used on all documents; auto-sized to fit even if large. Saved &amp; remembered.</div>' +
-          '</div>' +
           '<div class="field"><label>Recipient Name <span class="req">*</span></label>' +
             '<input id="prop_name" type="text" placeholder="e.g. Mr. Ramesh Kumar"></div>' +
           '<div class="field"><label>Recipient Company</label>' +
@@ -719,14 +729,11 @@
             '<textarea id="prop_terms" style="min-height:110px"></textarea></div>' +
           '<div class="prop-mod" style="padding:12px 14px">' +
             '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">' +
-              '<input type="checkbox" id="prop_wm_en" style="width:auto"> <strong>Add watermark (tiled logo, faint)</strong></label>' +
+              '<input type="checkbox" id="prop_wm_en" style="width:auto"> <strong>Add watermark (your logo, faint &amp; tiled)</strong></label>' +
             '<div id="prop_wm_body" style="display:none;margin-top:10px">' +
-              '<div class="row2">' +
-                '<div class="field" style="margin:0"><label>Logo image</label><input type="file" id="prop_wm_file" accept="image/*"></div>' +
-                '<div class="field" style="margin:0"><label>Opacity: <span id="prop_wm_opv">6</span>%</label>' +
-                  '<input type="range" id="prop_wm_op" min="2" max="18" value="6"></div>' +
-              '</div>' +
-              '<div style="font-size:.75rem;color:var(--muted);margin-top:6px">Upload your logo; it is tiled faintly across every page. Uncheck to disable.</div>' +
+              '<div class="field" style="margin:0"><label>Opacity: <span id="prop_wm_opv">6</span>%</label>' +
+                '<input type="range" id="prop_wm_op" min="2" max="18" value="6"></div>' +
+              '<div id="prop_wm_note" style="font-size:.75rem;color:var(--muted);margin-top:6px"></div>' +
               '<canvas id="prop_wm_canvas" style="display:none"></canvas>' +
             '</div>' +
           '</div>' +
@@ -737,8 +744,6 @@
         $('prop_terms').value = DEFAULT_TERMS;
         $('prop_disc').addEventListener('input', proposalRecalc);
         $('prop_disctype').addEventListener('change', proposalRecalc);
-        $('logo_status').textContent = HAS_LOGO ? '✓ logo on file' : '(none yet)';
-        $('prop_logo').addEventListener('change', function () { uploadLogo(this); });
         wireWatermark();
 
         renderChecklist('prop_incl_list', SETTINGS.inclusions);
@@ -852,7 +857,7 @@
         return out;
       }
 
-      /* ---------- logo upload ---------- */
+      /* ---------- one-time logo upload (used on all docs + watermark) ---------- */
       function uploadLogo(input) {
         var f = input.files && input.files[0]; if (!f) return;
         if (f.size > 6 * 1024 * 1024) { $('logo_status').textContent = 'too large (max 6 MB)'; return; }
@@ -865,32 +870,38 @@
           $('logo_status').textContent = 'uploading…';
           google.script.run
             .withSuccessHandler(function (res) {
-              if (res && res.ok) { HAS_LOGO = true; $('logo_status').textContent = '✓ logo saved'; }
-              else { $('logo_status').textContent = 'error: ' + (res && res.error ? res.error : 'failed'); }
+              if (res && res.ok) {
+                HAS_LOGO = true; LOGO_DATAURL = dataUrl;
+                $('logo_status').textContent = '✓ saved';
+                preloadWatermarkLogo();
+              } else { $('logo_status').textContent = 'error: ' + (res && res.error ? res.error : 'failed'); }
             })
             .withFailureHandler(function (err) { $('logo_status').textContent = 'error: ' + (err && err.message ? err.message : err); })
             .saveLogo(b64, mime);
         };
         reader.readAsDataURL(f);
       }
+      function preloadWatermarkLogo() {
+        if (!LOGO_DATAURL) return;
+        var img = new Image();
+        img.onload = function () { wmImage = img; rebuildWatermark(); };
+        img.src = LOGO_DATAURL;
+      }
 
-      /* ---------- watermark ---------- */
+      /* ---------- watermark (uses the one-time uploaded brand logo) ---------- */
       var wmImage = null;   // the loaded logo Image
       function wireWatermark() {
-        WATERMARK_PNG = ''; wmImage = null;
-        var en = $('prop_wm_en'), body = $('prop_wm_body');
+        WATERMARK_PNG = '';
+        var en = $('prop_wm_en'), body = $('prop_wm_body'), note = $('prop_wm_note');
         en.addEventListener('change', function () { body.style.display = this.checked ? '' : 'none'; rebuildWatermark(); });
         $('prop_wm_op').addEventListener('input', function () { $('prop_wm_opv').textContent = this.value; rebuildWatermark(); });
-        $('prop_wm_file').addEventListener('change', function () {
-          var f = this.files && this.files[0]; if (!f) return;
-          var reader = new FileReader();
-          reader.onload = function (e) {
-            var img = new Image();
-            img.onload = function () { wmImage = img; rebuildWatermark(); };
-            img.src = e.target.result;
-          };
-          reader.readAsDataURL(f);
-        });
+        if (LOGO_DATAURL) {
+          note.textContent = 'Uses your brand logo, tiled faintly on every page.';
+          preloadWatermarkLogo();
+        } else {
+          en.disabled = true; en.parentNode.style.opacity = '.55';
+          note.textContent = 'Upload a brand logo (top-right) to enable the watermark.';
+        }
       }
       function rebuildWatermark() {
         if (!$('prop_wm_en').checked || !wmImage) { WATERMARK_PNG = ''; return; }

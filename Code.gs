@@ -83,6 +83,11 @@ const TEMPLATE_ROLE_RESTRICTIONS = {
   // 'memo': ['Admin', 'Manager']   // e.g. only Admins/Managers may issue Internal Memos
 };
 
+// Proposal document palette (matches the approved cream/copper design).
+var PROP_SLATE = '#39434b', PROP_COPPER = '#b06a3a', PROP_GOLD = '#c9a24b',
+    PROP_CREAM = '#f7f3ec', PROP_ZEBRA = '#faf7f2', PROP_LINE = '#e7e0d5',
+    PROP_INK = '#22303c', PROP_MUTED = '#8f897f', PROP_TEXT = '#413d37';
+
 // 7) COMPANY details — used to brand the code-built Proposal (header/footer/GST). Edit freely.
 const COMPANY = {
   name: 'SandalMist Resort & Spa',
@@ -305,6 +310,14 @@ function getLogoBlob_() {
     return id ? DriveApp.getFileById(id).getBlob() : null;
   } catch (e) { return null; }
 }
+/** Returns the stored logo as a data URL (for the client to build the watermark + preview). */
+function getLogoDataUrl() {
+  try {
+    var blob = getLogoBlob_();
+    if (!blob) return { ok: false };
+    return { ok: true, dataUrl: 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes()) };
+  } catch (e) { return { ok: false }; }
+}
 
 /* ---- Menu from the "Menu" sheet (Category | Item | Price) -> grouped by category (display name) ---- */
 function getMenu_() {
@@ -469,13 +482,13 @@ function exportDocx_(docId) {
 function buildProposalDoc_(doc, data, modules, t, co, opts) {
   opts = opts || {};
   var mode = opts.mode || 'client';
-  var brand = co.brandColor || '#1f4d46';
+  var brand = PROP_SLATE;
   var body = doc.getBody();
   body.setMarginTop(96).setMarginBottom(60).setMarginLeft(54).setMarginRight(54);
   var base = {};
   base[DocumentApp.Attribute.FONT_FAMILY] = 'Calibri';
   base[DocumentApp.Attribute.FONT_SIZE] = 10;
-  base[DocumentApp.Attribute.FOREGROUND_COLOR] = '#333333';
+  base[DocumentApp.Attribute.FOREGROUND_COLOR] = PROP_TEXT;
   body.setAttributes(base);
 
   // ---- Header (repeats every page): logo (auto-sized) or company name, + contact + rule ----
@@ -500,9 +513,9 @@ function buildProposalDoc_(doc, data, modules, t, co, opts) {
     header.appendParagraph(co.tagline).setFontFamily('Georgia').setForegroundColor('#8a8a8a').setItalic(true).setBold(false).setFontSize(9);
   }
   header.appendParagraph(co.address + '   ·   Mob: ' + co.mobile + '   ·   ' + co.email + '   ·   ' + co.website)
-    .setForegroundColor('#8a8a8a').setItalic(false).setBold(false).setFontSize(8)
-    .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-  header.appendHorizontalRule();
+    .setForegroundColor(PROP_MUTED).setItalic(false).setBold(false).setFontSize(8)
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER).setSpacingAfter(3);
+  goldRule_(header);   // gold hairline instead of the grey default rule
 
   // ---- Footer (repeats every page) ----
   doc.addFooter().appendParagraph(co.name + '   |   ' + co.website + '   |   GSTIN: ' + co.gstin)
@@ -512,19 +525,18 @@ function buildProposalDoc_(doc, data, modules, t, co, opts) {
   if (mode === 'internal') {
     var ib = body.appendTable([['INTERNAL COPY — NOT FOR CLIENT']]);
     ib.setBorderWidth(0);
-    ib.getCell(0, 0).setBackgroundColor('#b03535').setPaddingTop(4).setPaddingBottom(4);
-    ib.getCell(0, 0).getChild(0).asParagraph().setForegroundColor('#ffffff').setBold(true).setFontSize(9.5)
+    ib.getCell(0, 0).setBackgroundColor('#b03535').setPaddingTop(3).setPaddingBottom(3);
+    ib.getCell(0, 0).getChild(0).asParagraph().setForegroundColor('#ffffff').setBold(true).setFontSize(9)
       .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
     body.appendParagraph('').setFontSize(3);
   }
 
-  // ---- Title banner ----
-  var banner = body.appendTable([['PROPOSAL  /  QUOTATION']]);
-  banner.setBorderWidth(0);
-  var bcell = banner.getCell(0, 0);
-  bcell.setBackgroundColor(brand).setPaddingTop(7).setPaddingBottom(7);
-  bcell.getChild(0).asParagraph().setForegroundColor('#ffffff').setBold(true).setFontSize(14)
-    .setFontFamily('Georgia').setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  // ---- Title (light, serif, copper underline) ----
+  body.appendParagraph('PROPOSAL  /  QUOTATION')
+    .setForegroundColor(PROP_SLATE).setBold(true).setFontSize(17).setFontFamily('Georgia')
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER).setSpacingAfter(2);
+  goldRule_(body);
+  body.appendParagraph('').setFontSize(3).setSpacingAfter(2);
 
   // ---- Meta (To + numbers) ----
   var meta = body.appendTable([
@@ -532,9 +544,12 @@ function buildProposalDoc_(doc, data, modules, t, co, opts) {
     [(data.recipientName || '') + (data.recipientCompany ? '\n' + data.recipientCompany : ''),
      'Date:   ' + (data.date || '') + '\nValid Until:   ' + (data.validUntil || '')]
   ]);
-  meta.setBorderWidth(0);
-  meta.getCell(0, 0).editAsText().setBold(true).setForegroundColor('#888888').setFontSize(9);
-  meta.getCell(1, 0).editAsText().setBold(true).setFontSize(11).setForegroundColor('#222222');
+  meta.setBorderColor(PROP_LINE).setBorderWidth(0.5);
+  for (var mr = 0; mr < 2; mr++) for (var mc = 0; mc < 2; mc++) {
+    meta.getCell(mr, mc).setBackgroundColor(PROP_CREAM).setPaddingTop(6).setPaddingBottom(6).setPaddingLeft(12).setPaddingRight(12);
+  }
+  meta.getCell(0, 0).editAsText().setBold(true).setForegroundColor(PROP_MUTED).setFontSize(9);
+  meta.getCell(1, 0).editAsText().setBold(true).setFontSize(11).setForegroundColor(PROP_INK);
   [[0, 1], [1, 1]].forEach(function (rc) {
     var cell = meta.getCell(rc[0], rc[1]);
     cell.getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
@@ -617,20 +632,31 @@ function addWatermark_(doc, header, b64) {
      .setTopOffset(-(body.getMarginTop() - 6));   // pull up to roughly the page top; tune if needed
 }
 
-/* ---- proposal doc styling helpers ---- */
+/* ---- proposal doc styling helpers (approved cream/copper look) ---- */
 
-// Full-width coloured section bar (a 1-cell table so it spans the page).
+// A thin gold hairline (1-row table shaded gold).
+function goldRule_(container) {
+  var t = container.appendTable([['']]);
+  t.setBorderWidth(0);
+  var c = t.getCell(0, 0);
+  c.setBackgroundColor(PROP_GOLD).setPaddingTop(0).setPaddingBottom(0).setPaddingLeft(0).setPaddingRight(0);
+  c.getChild(0).asParagraph().setFontSize(1).setSpacingBefore(0).setSpacingAfter(0);
+}
+
+// Copper uppercase section label with a hairline underneath (no dark fill).
 function sectionBar_(body, text, brand) {
-  body.appendParagraph('').setFontSize(4).setSpacingAfter(0);   // small gap above
-  var tbl = body.appendTable([[text]]);
-  tbl.setBorderWidth(0);
-  var c = tbl.getCell(0, 0);
-  c.setBackgroundColor(brand).setPaddingTop(4).setPaddingBottom(4).setPaddingLeft(8);
-  c.getChild(0).asParagraph().setForegroundColor('#ffffff').setBold(true).setFontSize(9.5).setFontFamily('Calibri');
+  body.appendParagraph('').setFontSize(4);
+  body.appendParagraph(text.toUpperCase())
+    .setForegroundColor(PROP_COPPER).setBold(true).setFontSize(10.5).setFontFamily('Georgia')
+    .setSpacingBefore(4).setSpacingAfter(1);
+  var hr = body.appendTable([['']]);
+  hr.setBorderWidth(0);
+  hr.getCell(0, 0).setBackgroundColor(PROP_LINE).setPaddingTop(0).setPaddingBottom(0);
+  hr.getCell(0, 0).getChild(0).asParagraph().setFontSize(1);
 }
 
 function styleItemsTable_(tbl, brand) {
-  tbl.setBorderColor('#e2e6ee').setBorderWidth(0.5);
+  tbl.setBorderColor(PROP_LINE).setBorderWidth(0.5);
   var widths = [232, 46, 58, 74, 86];  // Description, Qty, Unit, Rate, Amount (points)
   for (var w = 0; w < widths.length; w++) { try { tbl.setColumnWidth(w, widths[w]); } catch (e) {} }
   var n = tbl.getNumRows();
@@ -639,23 +665,23 @@ function styleItemsTable_(tbl, brand) {
     var head = (r === 0), sub = (r === n - 1);
     for (var c = 0; c < row.getNumCells(); c++) {
       var cell = row.getCell(c);
-      cell.setPaddingTop(3).setPaddingBottom(3).setPaddingLeft(6).setPaddingRight(6);
+      cell.setPaddingTop(4).setPaddingBottom(4).setPaddingLeft(7).setPaddingRight(7);
       var txt = cell.editAsText(); txt.setFontSize(8.5).setFontFamily('Calibri');
       var para = cell.getChild(0).asParagraph();
       if (c >= 3) para.setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
       else if (c === 1 || c === 2) para.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-      if (head) { cell.setBackgroundColor(brand); txt.setForegroundColor('#ffffff').setBold(true); }
+      if (head) { cell.setBackgroundColor(PROP_CREAM); txt.setForegroundColor(PROP_MUTED).setBold(true).setFontSize(8); }
       else {
-        txt.setForegroundColor('#333333');
-        if (sub) { cell.setBackgroundColor('#eef3f1'); txt.setBold(true); }
-        else if (r % 2 === 0) cell.setBackgroundColor('#f6f8f7');   // zebra
+        txt.setForegroundColor(PROP_TEXT);
+        if (sub) { cell.setBackgroundColor(PROP_CREAM); txt.setBold(true).setForegroundColor(PROP_INK); }
+        else if (r % 2 === 0) cell.setBackgroundColor(PROP_ZEBRA);   // zebra
       }
     }
   }
 }
 
 function styleSummaryTable_(tbl, brand) {
-  tbl.setBorderColor('#e2e6ee').setBorderWidth(0.5);
+  tbl.setBorderColor(PROP_LINE).setBorderWidth(0.5);
   try { tbl.setColumnWidth(0, 380); tbl.setColumnWidth(1, 116); } catch (e) {}
   var n = tbl.getNumRows();
   for (var r = 0; r < n; r++) {
@@ -663,11 +689,12 @@ function styleSummaryTable_(tbl, brand) {
     var head = (r === 0), grand = (r === n - 1);
     for (var c = 0; c < 2; c++) {
       var cell = row.getCell(c);
-      cell.setPaddingTop(3).setPaddingBottom(3).setPaddingLeft(8).setPaddingRight(8);
+      cell.setPaddingTop(4).setPaddingBottom(4).setPaddingLeft(9).setPaddingRight(9);
       var txt = cell.editAsText(); txt.setFontSize(9.5).setFontFamily('Calibri');
       if (c === 1) cell.getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
-      if (head) { cell.setBackgroundColor('#eef3f1'); txt.setBold(true).setForegroundColor('#555555').setFontSize(8.5); }
-      if (grand) { cell.setBackgroundColor(brand); txt.setBold(true).setForegroundColor('#ffffff').setFontSize(11); }
+      txt.setForegroundColor(PROP_TEXT);
+      if (head) { cell.setBackgroundColor(PROP_CREAM); txt.setBold(true).setForegroundColor(PROP_MUTED).setFontSize(8.5); }
+      if (grand) { cell.setBackgroundColor(PROP_SLATE); txt.setBold(true).setForegroundColor('#ffffff').setFontSize(11.5).setFontFamily('Georgia'); }
     }
   }
 }

@@ -227,6 +227,25 @@ function getServices_() {
   } catch (e) { return {}; }
 }
 
+/* ---- Menu from the "Menu" sheet (Category | Item | Price) -> grouped by category (display name) ---- */
+function getMenu_() {
+  try {
+    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Menu');
+    if (!sh) return {};
+    var rows = sh.getDataRange().getValues();
+    var out = {};
+    for (var i = 1; i < rows.length; i++) {
+      var cat = String(rows[i][0] || '').trim() || 'Menu';
+      var item = String(rows[i][1] || '').trim();
+      if (!item) continue;
+      var price = rows[i].length > 2 ? Number(rows[i][2]) || 0 : 0;
+      if (!out[cat]) out[cat] = [];
+      out[cat].push({ name: item, rate: price });
+    }
+    return out;
+  } catch (e) { return {}; }
+}
+
 
 /* ============================================================================================
  *  PROPOSAL BUILDER  ->  Google Doc  ->  PDF + DOCX
@@ -362,6 +381,11 @@ function buildProposalDoc_(doc, data, modules, t) {
 
   // ---- Header (repeats every page) ----
   var header = doc.addHeader();
+  // Watermark: a page-sized, faint, tiled-logo PNG (built client-side) placed behind text in the
+  // header so it repeats on every page. Toggled off = no watermarkPng sent.
+  if (data.watermarkPng) {
+    try { addWatermark_(doc, header, data.watermarkPng); } catch (wmErr) { Logger.log('watermark: ' + wmErr); }
+  }
   header.appendParagraph(COMPANY.name).setForegroundColor(COMPANY.brandColor).setBold(true).setFontSize(18);
   header.appendParagraph(COMPANY.tagline).setForegroundColor('#777777').setFontSize(9).setBold(false).setItalic(true);
   var hc = header.appendParagraph(COMPANY.address + '   |   ' + COMPANY.phone);
@@ -443,6 +467,24 @@ function buildProposalDoc_(doc, data, modules, t) {
   body.appendParagraph('').setSpacingAfter(10);
   body.appendParagraph('For ' + COMPANY.name).setBold(true).setForegroundColor(COMPANY.brandColor).setSpacingBefore(16);
   body.appendParagraph('Authorised Signatory').setItalic(true).setForegroundColor('#666666').setFontSize(9);
+}
+
+/**
+ * Places a page-sized watermark image behind the text on every page. The image is anchored to a
+ * paragraph in the (repeating) header and offset to cover the full page. The PNG already carries
+ * the faintness/tiling, so we just size it to the page.
+ */
+function addWatermark_(doc, header, b64) {
+  var blob = Utilities.newBlob(Utilities.base64Decode(b64), 'image/png', 'watermark.png');
+  var body = doc.getBody();
+  var pw = body.getPageWidth();   // points, full page incl. margins
+  var ph = body.getPageHeight();
+  var p = header.getParagraphs()[0] || header.appendParagraph('');
+  var img = p.addPositionedImage(blob);
+  img.setWidth(pw).setHeight(ph)
+     .setLayout(DocumentApp.PositionedLayout.ABOVE_TEXT)
+     .setLeftOffset(-body.getMarginLeft())
+     .setTopOffset(-(body.getMarginTop() - 6));   // pull up to roughly the page top; tune if needed
 }
 
 /* ---- proposal doc styling helpers ---- */
@@ -664,6 +706,7 @@ function getSessionInfo() {
     rooms: getRooms_(),
     nextInvoiceNo: peekInvoiceNo_(),
     services: getServices_(),
+    menu: getMenu_(),
     nextProposalNo: peekProposalNo_(),
     defaultTerms: DEFAULT_TERMS.join('\n'),
     company: { name: COMPANY.name, gstin: COMPANY.gstin }
@@ -1346,6 +1389,27 @@ function setup() {
     svc.autoResizeColumns(1, 3);
   }
 
+  // ---- Menu sheet (drives the Food menu picker in the Proposal builder). Category | Item | Price. ----
+  if (!ss.getSheetByName('Menu')) {
+    var menu = ss.insertSheet('Menu');
+    menu.appendRow(['Category', 'Item', 'Price']);
+    menu.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#1f4d46').setFontColor('#ffffff');
+    menu.getRange(2, 1, 10, 3).setValues([
+      ['Starters', 'Onion Pakoda', 200],
+      ['Starters', 'Paneer Tikka', 320],
+      ['Main Course', 'Paneer Butter Masala', 350],
+      ['Main Course', 'Veg Fried Rice', 270],
+      ['Main Course', 'Kadai Paneer', 320],
+      ['Breads', 'Phulka', 45],
+      ['Breads', 'Chapathi', 40],
+      ['Desserts', 'Butterscotch Cone', 50],
+      ['Beverages', 'Tea', 45],
+      ['Beverages', 'Mineral Water', 25]
+    ]);
+    menu.setFrozenRows(1);
+    menu.autoResizeColumns(1, 3);
+  }
+
   SpreadsheetApp.getUi && SpreadsheetApp.flush();
-  Logger.log('Setup complete. Users, Log, Rooms and Services sheets ready. Edit rows with real data.');
+  Logger.log('Setup complete. Users, Log, Rooms, Services and Menu sheets ready. Edit rows with real data.');
 }

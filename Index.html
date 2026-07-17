@@ -179,8 +179,10 @@
       var ROOMS = [];        // [{ name, tariff }] for the Room dropdown
       var NEXT_INV = '';     // next invoice number for prefill
       var SERVICES = {};     // { room:[{name,rate}], hall:[...], ... } for the Proposal builder
+      var MENU = {};         // { Starters:[{name,rate}], ... } for the Food menu picker
       var NEXT_PROP = '';    // next proposal number
       var DEFAULT_TERMS = '';
+      var WATERMARK_PNG = '';  // base64 PNG of the tiled watermark (built from an uploaded logo)
       var activeForm = null;
       var curFields = [];    // field defs for the active form
       var editor = null;
@@ -279,6 +281,7 @@
         ROOMS = info.rooms || [];
         NEXT_INV = info.nextInvoiceNo || '';
         SERVICES = info.services || {};
+        MENU = info.menu || {};
         NEXT_PROP = info.nextProposalNo || '';
         DEFAULT_TERMS = info.defaultTerms || '';
 
@@ -704,6 +707,19 @@
             '<textarea id="prop_excl" placeholder="Anything not listed above&#10;Personal expenses"></textarea></div>' +
           '<div class="field"><label>Terms &amp; Conditions (one per line)</label>' +
             '<textarea id="prop_terms" style="min-height:110px"></textarea></div>' +
+          '<div class="prop-mod" style="padding:12px 14px">' +
+            '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">' +
+              '<input type="checkbox" id="prop_wm_en" style="width:auto"> <strong>Add watermark (tiled logo, faint)</strong></label>' +
+            '<div id="prop_wm_body" style="display:none;margin-top:10px">' +
+              '<div class="row2">' +
+                '<div class="field" style="margin:0"><label>Logo image</label><input type="file" id="prop_wm_file" accept="image/*"></div>' +
+                '<div class="field" style="margin:0"><label>Opacity: <span id="prop_wm_opv">6</span>%</label>' +
+                  '<input type="range" id="prop_wm_op" min="2" max="18" value="6"></div>' +
+              '</div>' +
+              '<div style="font-size:.75rem;color:var(--muted);margin-top:6px">Upload your logo; it is tiled faintly across every page. Uncheck to disable.</div>' +
+              '<canvas id="prop_wm_canvas" style="display:none"></canvas>' +
+            '</div>' +
+          '</div>' +
           '<div class="prop-sum" id="prop_summary"></div>';
 
         $('prop_no').value = NEXT_PROP;
@@ -711,6 +727,7 @@
         $('prop_terms').value = DEFAULT_TERMS;
         $('prop_disc').addEventListener('input', proposalRecalc);
         $('prop_disctype').addEventListener('change', proposalRecalc);
+        wireWatermark();
 
         var mc = $('prop_modules');
         PROP_MODULES.forEach(function (m) { mc.appendChild(buildModule(m[0], m[1], m[2])); });
@@ -727,9 +744,21 @@
         wrap.appendChild(head);
 
         var bodyDiv = document.createElement('div'); bodyDiv.className = 'prop-mod-body'; bodyDiv.style.display = 'none';
-        var svc = SERVICES[cat] || [];
+        // Food module picks from the Menu sheet (grouped by category); others use the Services list.
+        var useMenu = (key === 'food' && Object.keys(MENU).length);
+        var svc = useMenu ? flattenMenu() : (SERVICES[cat] || []);
         var quick = '';
-        if (svc.length) {
+        if (useMenu) {
+          quick = '<select class="prop-quick" style="margin-bottom:8px"><option value="">+ Add dish from menu...</option>';
+          Object.keys(MENU).forEach(function (mcat) {
+            quick += '<optgroup label="' + escapeHtml(mcat) + '">';
+            MENU[mcat].forEach(function (s) {
+              quick += '<option value="' + escapeHtml(s.name) + '|' + s.rate + '">' + escapeHtml(s.name) + ' (Rs.' + s.rate + ')</option>';
+            });
+            quick += '</optgroup>';
+          });
+          quick += '</select>';
+        } else if (svc.length) {
           quick = '<select class="prop-quick" style="margin-bottom:8px"><option value="">+ Quick add from list...</option>' +
             svc.map(function (s, i) { return '<option value="' + i + '">' + escapeHtml(s.name) + ' (Rs.' + s.rate + ')</option>'; }).join('') + '</select>';
         }
@@ -752,7 +781,9 @@
         var q = bodyDiv.querySelector('.prop-quick');
         if (q) q.addEventListener('change', function () {
           if (this.value === '') return;
-          var s = svc[parseInt(this.value, 10)];
+          var s;
+          if (this.value.indexOf('|') !== -1) { var parts = this.value.split('|'); s = { name: parts[0], rate: parts[1] }; }
+          else { s = svc[parseInt(this.value, 10)]; }
           var firstEmpty = null;
           Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (tr) {
             if (!firstEmpty && !tr.querySelector('.li-item').value.trim()) firstEmpty = tr;
@@ -766,6 +797,57 @@
           proposalRecalc();
         });
         return wrap;
+      }
+
+      function flattenMenu() {
+        var out = [];
+        Object.keys(MENU).forEach(function (c) { MENU[c].forEach(function (s) { out.push(s); }); });
+        return out;
+      }
+
+      /* ---------- watermark ---------- */
+      var wmImage = null;   // the loaded logo Image
+      function wireWatermark() {
+        WATERMARK_PNG = ''; wmImage = null;
+        var en = $('prop_wm_en'), body = $('prop_wm_body');
+        en.addEventListener('change', function () { body.style.display = this.checked ? '' : 'none'; rebuildWatermark(); });
+        $('prop_wm_op').addEventListener('input', function () { $('prop_wm_opv').textContent = this.value; rebuildWatermark(); });
+        $('prop_wm_file').addEventListener('change', function () {
+          var f = this.files && this.files[0]; if (!f) return;
+          var reader = new FileReader();
+          reader.onload = function (e) {
+            var img = new Image();
+            img.onload = function () { wmImage = img; rebuildWatermark(); };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(f);
+        });
+      }
+      function rebuildWatermark() {
+        if (!$('prop_wm_en').checked || !wmImage) { WATERMARK_PNG = ''; return; }
+        var opacity = num($('prop_wm_op').value) / 100;
+        WATERMARK_PNG = buildWatermarkPng(wmImage, opacity);
+      }
+      function buildWatermarkPng(img, opacity) {
+        var W = 1240, H = 1754;              // ~150dpi A4 portrait
+        var canvas = $('prop_wm_canvas'); canvas.width = W; canvas.height = H;
+        var ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, W, H);
+        ctx.globalAlpha = opacity;
+        var cols = 4;                         // small, multiple logos per page
+        var tileW = W / cols;
+        var scale = (tileW * 0.72) / img.width;
+        var lw = img.width * scale, lh = img.height * scale;
+        var stepY = tileW;
+        var r = 0;
+        for (var y = -stepY; y < H + stepY; y += stepY) {
+          var ox = (r % 2 === 0) ? 0 : tileW / 2;   // brick offset for a diagonal feel
+          for (var x = -tileW; x < W + tileW; x += tileW) {
+            ctx.drawImage(img, x + ox + (tileW - lw) / 2, y + (stepY - lh) / 2, lw, lh);
+          }
+          r++;
+        }
+        return canvas.toDataURL('image/png').split(',')[1];
       }
 
       function addPropRow(tbody, hint, item, qty, rate) {
@@ -865,7 +947,8 @@
           discountValue: $('prop_disc').value,
           inclusions: $('prop_incl').value,
           exclusions: $('prop_excl').value,
-          terms: $('prop_terms').value
+          terms: $('prop_terms').value,
+          watermarkPng: ($('prop_wm_en') && $('prop_wm_en').checked) ? WATERMARK_PNG : ''
         };
       }
 

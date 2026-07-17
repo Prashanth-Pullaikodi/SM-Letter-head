@@ -190,7 +190,12 @@ function getRooms_() {
     for (var i = 1; i < rows.length; i++) {
       var name = String(rows[i][0] || '').trim();
       if (!name) continue;
-      out.push({ name: name, tariff: (rows[i].length > 1 ? String(rows[i][1] || '').trim() : '') });
+      out.push({
+        name: name,
+        tariff: rows[i].length > 1 ? String(rows[i][1] || '').trim() : '',
+        unit: rows[i].length > 2 ? String(rows[i][2] || '').trim() : 'night',
+        maxPax: rows[i].length > 3 ? String(rows[i][3] || '').trim() : ''
+      });
     }
     return out;
   } catch (e) { return []; }
@@ -219,12 +224,53 @@ function getServices_() {
       var name = String(rows[i][1] || '').trim();
       if (!cat || !name) continue;
       var rate = rows[i].length > 2 ? Number(rows[i][2]) || 0 : 0;
+      var unit = rows[i].length > 3 ? String(rows[i][3] || '').trim() : '';
       var key = cat.toLowerCase();
       if (!out[key]) out[key] = [];
-      out[key].push({ name: name, rate: rate });
+      out[key].push({ name: name, rate: rate, unit: unit });
     }
     return out;
   } catch (e) { return {}; }
+}
+
+/* ---- Settings sheet (Key | Value) -> company info + repeated Inclusion/Exclusion/Term lists ----
+ * Repeated keys 'Inclusion', 'Exclusion', 'Term' (one value per row) become selectable lists.
+ * Everything else is a single company/config value. Falls back to the COMPANY/DEFAULT_TERMS consts. */
+function getSettings_() {
+  var raw = {}, inclusions = [], exclusions = [], terms = [];
+  try {
+    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Settings');
+    if (sh) {
+      var rows = sh.getDataRange().getValues();
+      for (var i = 1; i < rows.length; i++) {
+        var k = String(rows[i][0] || '').trim(); var v = String(rows[i][1] || '').trim();
+        if (!k) continue;
+        var lk = k.toLowerCase();
+        if (lk === 'inclusion') { if (v) inclusions.push(v); }
+        else if (lk === 'exclusion') { if (v) exclusions.push(v); }
+        else if (lk === 'term') { if (v) terms.push(v); }
+        else raw[lk] = v;
+      }
+    }
+  } catch (e) {}
+  var company = {
+    name: raw['company name'] || COMPANY.name,
+    tagline: raw['tagline'] || COMPANY.tagline,
+    address: raw['address'] || COMPANY.address,
+    mobile: raw['mobile'] || raw['phone'] || COMPANY.phone,
+    phone: raw['phone'] || COMPANY.phone,
+    email: raw['email'] || COMPANY.email,
+    website: raw['website'] || raw['domain'] || COMPANY.website,
+    gstin: raw['gstin'] || COMPANY.gstin,
+    brandColor: raw['brand color'] || COMPANY.brandColor,
+    accent: raw['accent color'] || COMPANY.accent
+  };
+  return {
+    company: company,
+    inclusions: inclusions,
+    exclusions: exclusions,
+    terms: terms.length ? terms : DEFAULT_TERMS.slice()
+  };
 }
 
 /* ---- Menu from the "Menu" sheet (Category | Item | Price) -> grouped by category (display name) ---- */
@@ -293,10 +339,11 @@ function generateProposal(data) {
       m.items.forEach(function (it) {
         var name = String(it.item || '').trim();
         var qty = num_(it.qty), rate = num_(it.rate);
+        var unit = String(it.unit || '').trim();
         if (!name && !qty && !rate) return;
         var amt = qty * rate;
         m.subtotal += amt;
-        m.rows.push({ name: name || 'Item', qty: qty, rate: rate, amt: amt });
+        m.rows.push({ name: name || 'Item', qty: qty, unit: unit, rate: rate, amt: amt });
       });
       m.gstRate = gstRateForCategory_(m.key, m.subtotal);
     });
@@ -328,6 +375,7 @@ function generateProposal(data) {
     var grand = netTaxable + totalCgst + totalSgst;
 
     // ---- Build the Doc ----
+    var settings = getSettings_();
     var doc = DocumentApp.create('TEMP_Proposal_' + Date.now());
     var docId = doc.getId();
     var pdfBlob, docxBlob;
@@ -335,7 +383,7 @@ function generateProposal(data) {
       buildProposalDoc_(doc, data, modules, {
         taxable: taxable, discountType: discountType, discountVal: discountVal, discountAmt: discountAmt,
         gstGroups: gstGroups, totalCgst: totalCgst, totalSgst: totalSgst, netTaxable: netTaxable, grand: grand
-      });
+      }, settings.company);
       doc.saveAndClose();
 
       pdfBlob = DriveApp.getFileById(docId).getAs('application/pdf');
@@ -374,65 +422,72 @@ function exportDocx_(docId) {
   return resp.getBlob().setName('Proposal.docx');
 }
 
-/** Renders all proposal content into the document. */
-function buildProposalDoc_(doc, data, modules, t) {
+/** Renders a professionally-styled proposal into the document. `co` = resolved company info. */
+function buildProposalDoc_(doc, data, modules, t, co) {
+  var brand = co.brandColor || '#1f4d46';
   var body = doc.getBody();
-  body.setMarginTop(54).setMarginBottom(54).setMarginLeft(56).setMarginRight(56);
+  body.setMarginTop(70).setMarginBottom(60).setMarginLeft(54).setMarginRight(54);
+  var base = {};
+  base[DocumentApp.Attribute.FONT_FAMILY] = 'Calibri';
+  base[DocumentApp.Attribute.FONT_SIZE] = 10;
+  base[DocumentApp.Attribute.FOREGROUND_COLOR] = '#333333';
+  body.setAttributes(base);
 
   // ---- Header (repeats every page) ----
   var header = doc.addHeader();
-  // Watermark: a page-sized, faint, tiled-logo PNG (built client-side) placed behind text in the
-  // header so it repeats on every page. Toggled off = no watermarkPng sent.
   if (data.watermarkPng) {
     try { addWatermark_(doc, header, data.watermarkPng); } catch (wmErr) { Logger.log('watermark: ' + wmErr); }
   }
-  header.appendParagraph(COMPANY.name).setForegroundColor(COMPANY.brandColor).setBold(true).setFontSize(18);
-  header.appendParagraph(COMPANY.tagline).setForegroundColor('#777777').setFontSize(9).setBold(false).setItalic(true);
-  var hc = header.appendParagraph(COMPANY.address + '   |   ' + COMPANY.phone);
-  hc.setForegroundColor('#888888').setFontSize(8).setItalic(false);
+  header.appendParagraph(co.name).setFontFamily('Georgia').setForegroundColor(brand).setBold(true).setFontSize(17).setSpacingAfter(0);
+  header.appendParagraph(co.tagline).setFontFamily('Georgia').setForegroundColor('#8a8a8a').setItalic(true).setBold(false).setFontSize(9).setSpacingAfter(1);
+  header.appendParagraph(co.address).setForegroundColor('#8a8a8a').setItalic(false).setFontSize(8).setSpacingAfter(0);
+  header.appendParagraph('Mob: ' + co.mobile + '   |   ' + co.email + '   |   ' + co.website)
+    .setForegroundColor('#8a8a8a').setFontSize(8);
   header.appendHorizontalRule();
 
   // ---- Footer (repeats every page) ----
-  var footer = doc.addFooter();
-  footer.appendParagraph(COMPANY.website + '   |   ' + COMPANY.email + '   |   GSTIN: ' + COMPANY.gstin)
-    .setForegroundColor('#888888').setFontSize(8).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  doc.addFooter().appendParagraph(co.name + '   |   ' + co.website + '   |   GSTIN: ' + co.gstin)
+    .setForegroundColor('#9a9a9a').setFontSize(8).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
 
-  // ---- Title ----
-  body.appendParagraph('PROPOSAL / QUOTATION')
-    .setForegroundColor(COMPANY.brandColor).setBold(true).setFontSize(16)
-    .setAlignment(DocumentApp.HorizontalAlignment.CENTER).setSpacingAfter(6);
+  // ---- Title banner ----
+  var banner = body.appendTable([['PROPOSAL  /  QUOTATION']]);
+  banner.setBorderWidth(0);
+  var bcell = banner.getCell(0, 0);
+  bcell.setBackgroundColor(brand).setPaddingTop(7).setPaddingBottom(7);
+  bcell.getChild(0).asParagraph().setForegroundColor('#ffffff').setBold(true).setFontSize(14)
+    .setFontFamily('Georgia').setAlignment(DocumentApp.HorizontalAlignment.CENTER);
 
   // ---- Meta (To + numbers) ----
   var meta = body.appendTable([
-    ['To:', 'Proposal No: ' + (data.proposalNo || '')],
+    ['To:', 'Proposal No:   ' + (data.proposalNo || '')],
     [(data.recipientName || '') + (data.recipientCompany ? '\n' + data.recipientCompany : ''),
-     'Date: ' + (data.date || '') + '\nValid Until: ' + (data.validUntil || '')]
+     'Date:   ' + (data.date || '') + '\nValid Until:   ' + (data.validUntil || '')]
   ]);
-  clearTableBorders_(meta);
-  meta.getCell(0, 1).getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
-  meta.getCell(1, 1).getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
-  meta.getCell(0, 0).editAsText().setBold(true);
-  body.appendParagraph('').setSpacingAfter(4);
+  meta.setBorderWidth(0);
+  meta.getCell(0, 0).editAsText().setBold(true).setForegroundColor('#888888').setFontSize(9);
+  meta.getCell(1, 0).editAsText().setBold(true).setFontSize(11).setForegroundColor('#222222');
+  [[0, 1], [1, 1]].forEach(function (rc) {
+    var cell = meta.getCell(rc[0], rc[1]);
+    cell.getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+    cell.editAsText().setFontSize(9).setForegroundColor('#666666');
+  });
+  body.appendParagraph('').setFontSize(3).setSpacingAfter(2);
 
   // ---- Service sections ----
   modules.forEach(function (m) {
-    sectionHeading_(body, m.title + '  (GST ' + m.gstRate + '%)');
-    var rows = [['Description', 'Qty', 'Rate (Rs.)', 'Amount (Rs.)']];
-    m.rows.forEach(function (r) { rows.push([r.name, String(r.qty), money_(r.rate), money_(r.amt)]); });
-    rows.push(['Subtotal', '', '', money_(m.subtotal)]);
-    var tbl = body.appendTable(rows);
-    styleItemsTable_(tbl);
+    sectionBar_(body, m.title.toUpperCase() + '    ·    GST ' + m.gstRate + '%', brand);
+    var rows = [['Description', 'Qty', 'Unit', 'Rate', 'Amount']];
+    m.rows.forEach(function (r) { rows.push([r.name, String(r.qty), r.unit || '', money_(r.rate), money_(r.amt)]); });
+    rows.push(['Subtotal', '', '', '', money_(m.subtotal)]);
+    styleItemsTable_(body.appendTable(rows), brand);
   });
 
   // ---- Charges summary ----
-  body.appendParagraph('').setSpacingAfter(2);
-  sectionHeading_(body, 'CHARGES SUMMARY');
-
-  var sumRows = [['', 'Amount (Rs.)']];
+  sectionBar_(body, 'CHARGES SUMMARY', brand);
+  var sumRows = [['Description', 'Amount (Rs.)']];
   sumRows.push(['Taxable Value', money_(t.taxable)]);
   if (t.discountAmt > 0) {
-    var dLabel = 'Discount' + (t.discountType === 'percent' ? ' (' + t.discountVal + '%)' : '');
-    sumRows.push([dLabel, '- ' + money_(t.discountAmt)]);
+    sumRows.push(['Discount' + (t.discountType === 'percent' ? ' (' + t.discountVal + '%)' : ''), '- ' + money_(t.discountAmt)]);
     sumRows.push(['Net Taxable Value', money_(t.netTaxable)]);
   }
   Object.keys(t.gstGroups).sort(function (a, b) { return Number(a) - Number(b); }).forEach(function (rate) {
@@ -440,33 +495,26 @@ function buildProposalDoc_(doc, data, modules, t) {
     sumRows.push(['CGST @ ' + half + '%', money_(t.gstGroups[rate].cgst)]);
     sumRows.push(['SGST @ ' + half + '%', money_(t.gstGroups[rate].sgst)]);
   });
-  sumRows.push(['GRAND TOTAL', money_(t.grand)]);
-  var sTbl = body.appendTable(sumRows);
-  styleSummaryTable_(sTbl);
+  sumRows.push(['GRAND TOTAL', 'Rs. ' + money_(t.grand)]);
+  styleSummaryTable_(body.appendTable(sumRows), brand);
 
   // ---- Inclusions / Exclusions ----
-  if (String(data.inclusions || '').trim()) {
-    sectionHeading_(body, 'INCLUSIONS');
-    addBullets_(body, data.inclusions, COMPANY.brandColor);
-  }
-  if (String(data.exclusions || '').trim()) {
-    sectionHeading_(body, 'EXCLUSIONS');
-    addBullets_(body, data.exclusions, '#b03535');
-  }
+  if (String(data.inclusions || '').trim()) { sectionBar_(body, 'INCLUSIONS', brand); addBullets_(body, data.inclusions, '#2e7d32', '✓'); }
+  if (String(data.exclusions || '').trim()) { sectionBar_(body, 'EXCLUSIONS', brand); addBullets_(body, data.exclusions, '#b03535', '✕'); }
 
   // ---- Terms ----
   if (String(data.terms || '').trim()) {
-    sectionHeading_(body, 'TERMS & CONDITIONS');
-    String(data.terms).split('\n').forEach(function (line, i) {
+    sectionBar_(body, 'TERMS & CONDITIONS', brand);
+    String(data.terms).split('\n').forEach(function (line) {
       line = line.trim(); if (!line) return;
-      body.appendListItem(line).setGlyphType(DocumentApp.GlyphType.NUMBER).setFontSize(9).setForegroundColor('#444444');
+      body.appendListItem(line).setGlyphType(DocumentApp.GlyphType.NUMBER).setFontSize(8.5).setForegroundColor('#555555');
     });
   }
 
   // ---- Sign-off ----
-  body.appendParagraph('').setSpacingAfter(10);
-  body.appendParagraph('For ' + COMPANY.name).setBold(true).setForegroundColor(COMPANY.brandColor).setSpacingBefore(16);
-  body.appendParagraph('Authorised Signatory').setItalic(true).setForegroundColor('#666666').setFontSize(9);
+  body.appendParagraph('We look forward to hosting you.').setItalic(true).setForegroundColor('#666666').setFontSize(9).setSpacingBefore(14);
+  body.appendParagraph('For ' + co.name).setBold(true).setForegroundColor(brand).setFontFamily('Georgia').setFontSize(11).setSpacingBefore(16);
+  body.appendParagraph('Authorised Signatory').setItalic(true).setForegroundColor('#777777').setFontSize(9);
 }
 
 /**
@@ -488,63 +536,66 @@ function addWatermark_(doc, header, b64) {
 }
 
 /* ---- proposal doc styling helpers ---- */
-function sectionHeading_(body, text) {
-  var p = body.appendParagraph(text);
-  p.setBold(true).setForegroundColor('#ffffff').setFontSize(10.5).setSpacingBefore(8).setSpacingAfter(4);
-  p.setBackgroundColor(COMPANY.brandColor);
-  p.editAsText().insertText(0, ' ');   // small left pad
-}
 
-function clearTableBorders_(tbl) {
+// Full-width coloured section bar (a 1-cell table so it spans the page).
+function sectionBar_(body, text, brand) {
+  body.appendParagraph('').setFontSize(4).setSpacingAfter(0);   // small gap above
+  var tbl = body.appendTable([[text]]);
   tbl.setBorderWidth(0);
+  var c = tbl.getCell(0, 0);
+  c.setBackgroundColor(brand).setPaddingTop(4).setPaddingBottom(4).setPaddingLeft(8);
+  c.getChild(0).asParagraph().setForegroundColor('#ffffff').setBold(true).setFontSize(9.5).setFontFamily('Calibri');
 }
 
-function styleItemsTable_(tbl) {
-  tbl.setBorderColor('#d9dee9').setBorderWidth(1);
-  var head = tbl.getRow(0);
-  for (var c = 0; c < head.getNumCells(); c++) {
-    head.getCell(c).setBackgroundColor(COMPANY.brandColor);
-    head.getCell(c).editAsText().setForegroundColor('#ffffff').setBold(true).setFontSize(9);
-  }
-  var nRows = tbl.getNumRows();
-  for (var r = 1; r < nRows; r++) {
+function styleItemsTable_(tbl, brand) {
+  tbl.setBorderColor('#e2e6ee').setBorderWidth(0.5);
+  var widths = [232, 46, 58, 74, 86];  // Description, Qty, Unit, Rate, Amount (points)
+  for (var w = 0; w < widths.length; w++) { try { tbl.setColumnWidth(w, widths[w]); } catch (e) {} }
+  var n = tbl.getNumRows();
+  for (var r = 0; r < n; r++) {
     var row = tbl.getRow(r);
-    for (var cc = 1; cc < row.getNumCells(); cc++) {
-      row.getCell(cc).getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
-    }
-    row.getCell(0).editAsText().setFontSize(9);
-    // last (subtotal) row bold
-    if (r === nRows - 1) {
-      for (var k = 0; k < row.getNumCells(); k++) row.getCell(k).editAsText().setBold(true);
-    }
-  }
-}
-
-function styleSummaryTable_(tbl) {
-  tbl.setBorderColor('#d9dee9').setBorderWidth(1);
-  var nRows = tbl.getNumRows();
-  for (var r = 0; r < nRows; r++) {
-    var row = tbl.getRow(r);
-    row.getCell(1).getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
-    row.getCell(0).editAsText().setFontSize(9.5);
-    row.getCell(1).editAsText().setFontSize(9.5);
-    if (r === 0) {
-      row.getCell(0).editAsText().setBold(true); row.getCell(1).editAsText().setBold(true);
-      row.getCell(0).setBackgroundColor('#eef3f1'); row.getCell(1).setBackgroundColor('#eef3f1');
-    }
-    if (r === nRows - 1) { // grand total
-      for (var k = 0; k < 2; k++) {
-        row.getCell(k).editAsText().setBold(true).setForegroundColor(COMPANY.brandColor).setFontSize(11);
-        row.getCell(k).setBackgroundColor('#eef3f1');
+    var head = (r === 0), sub = (r === n - 1);
+    for (var c = 0; c < row.getNumCells(); c++) {
+      var cell = row.getCell(c);
+      cell.setPaddingTop(3).setPaddingBottom(3).setPaddingLeft(6).setPaddingRight(6);
+      var txt = cell.editAsText(); txt.setFontSize(8.5).setFontFamily('Calibri');
+      var para = cell.getChild(0).asParagraph();
+      if (c >= 3) para.setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+      else if (c === 1 || c === 2) para.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+      if (head) { cell.setBackgroundColor(brand); txt.setForegroundColor('#ffffff').setBold(true); }
+      else {
+        txt.setForegroundColor('#333333');
+        if (sub) { cell.setBackgroundColor('#eef3f1'); txt.setBold(true); }
+        else if (r % 2 === 0) cell.setBackgroundColor('#f6f8f7');   // zebra
       }
     }
   }
 }
 
-function addBullets_(body, text, color) {
+function styleSummaryTable_(tbl, brand) {
+  tbl.setBorderColor('#e2e6ee').setBorderWidth(0.5);
+  try { tbl.setColumnWidth(0, 380); tbl.setColumnWidth(1, 116); } catch (e) {}
+  var n = tbl.getNumRows();
+  for (var r = 0; r < n; r++) {
+    var row = tbl.getRow(r);
+    var head = (r === 0), grand = (r === n - 1);
+    for (var c = 0; c < 2; c++) {
+      var cell = row.getCell(c);
+      cell.setPaddingTop(3).setPaddingBottom(3).setPaddingLeft(8).setPaddingRight(8);
+      var txt = cell.editAsText(); txt.setFontSize(9.5).setFontFamily('Calibri');
+      if (c === 1) cell.getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+      if (head) { cell.setBackgroundColor('#eef3f1'); txt.setBold(true).setForegroundColor('#555555').setFontSize(8.5); }
+      if (grand) { cell.setBackgroundColor(brand); txt.setBold(true).setForegroundColor('#ffffff').setFontSize(11); }
+    }
+  }
+}
+
+function addBullets_(body, text, color, mark) {
   String(text).split('\n').forEach(function (line) {
     line = line.trim(); if (!line) return;
-    body.appendListItem(line).setGlyphType(DocumentApp.GlyphType.BULLET).setFontSize(9.5).setForegroundColor('#333333');
+    var p = body.appendParagraph(mark + '   ' + line);
+    p.setFontSize(9).setForegroundColor('#333333').setSpacingAfter(1).setIndentStart(10);
+    try { p.editAsText().setForegroundColor(0, mark.length - 1, color).setBold(0, mark.length - 1, true); } catch (e) {}
   });
 }
 
@@ -708,8 +759,7 @@ function getSessionInfo() {
     services: getServices_(),
     menu: getMenu_(),
     nextProposalNo: peekProposalNo_(),
-    defaultTerms: DEFAULT_TERMS.join('\n'),
-    company: { name: COMPANY.name, gstin: COMPANY.gstin }
+    settings: getSettings_()
   };
 }
 
@@ -1352,41 +1402,43 @@ function setup() {
     log.setFrozenRows(1);
   }
 
-  // ---- Rooms sheet (drives the Invoice "Room" dropdown). Edit Name/Tariff to manage rooms. ----
+  // ---- Rooms sheet. Name | Rate | Unit | Max Pax. Unit = 'night' or 'head' (per-head billing). ----
   if (!ss.getSheetByName('Rooms')) {
     var rooms = ss.insertSheet('Rooms');
-    rooms.appendRow(['Name', 'Tariff (per night)']);
-    rooms.getRange(1, 1, 1, 2).setFontWeight('bold').setBackground('#1f4d46').setFontColor('#ffffff');
-    rooms.getRange(2, 1, 4, 2).setValues([
-      ['Premium Room', 6000],
-      ['Deluxe Room', 4500],
-      ['Standard Room', 3000],
-      ['Cottage', 8000]
+    rooms.appendRow(['Name', 'Rate', 'Unit', 'Max Pax']);
+    rooms.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#1f4d46').setFontColor('#ffffff');
+    rooms.getRange(2, 1, 5, 4).setValues([
+      ['Premium Room', 6000, 'night', 3],
+      ['Deluxe Room', 4500, 'night', 3],
+      ['Cottage', 8000, 'night', 5],
+      ['Dormitory (per head)', 1200, 'head', 20],
+      ['Wedding Package (per head, incl. food)', 1800, 'head', 200]
     ]);
     rooms.setFrozenRows(1);
-    rooms.autoResizeColumns(1, 2);
+    rooms.autoResizeColumns(1, 4);
   }
 
-  // ---- Services sheet (drives the Proposal builder pickers). Category | Name | Rate. ----
-  // Categories: Room, Hall, Amphitheater, Food, Other (case-insensitive).
+  // ---- Services sheet (Proposal pickers). Category | Name | Rate | Unit. ----
+  // Categories: Room, Hall, Amphitheater, Food, Other. Unit e.g. night / head / plate / event / day.
   if (!ss.getSheetByName('Services')) {
     var svc = ss.insertSheet('Services');
-    svc.appendRow(['Category', 'Name', 'Rate']);
-    svc.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#1f4d46').setFontColor('#ffffff');
-    svc.getRange(2, 1, 10, 3).setValues([
-      ['Room', 'Premium Room (per night)', 6000],
-      ['Room', 'Deluxe Room (per night)', 4500],
-      ['Room', 'Cottage (per night)', 8000],
-      ['Hall', 'Function Hall (half day)', 15000],
-      ['Hall', 'Function Hall (full day)', 25000],
-      ['Amphitheater', 'Amphitheater (per event)', 20000],
-      ['Food', 'Veg Buffet (per plate)', 650],
-      ['Food', 'Non-Veg Buffet (per plate)', 850],
-      ['Other', 'Decoration Package', 12000],
-      ['Other', 'DJ & Music (per event)', 10000]
+    svc.appendRow(['Category', 'Name', 'Rate', 'Unit']);
+    svc.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#1f4d46').setFontColor('#ffffff');
+    svc.getRange(2, 1, 11, 4).setValues([
+      ['Room', 'Premium Room', 6000, 'night'],
+      ['Room', 'Deluxe Room', 4500, 'night'],
+      ['Room', 'Cottage', 8000, 'night'],
+      ['Hall', 'Function Hall (half day)', 15000, 'day'],
+      ['Hall', 'Function Hall (full day)', 25000, 'day'],
+      ['Amphitheater', 'Amphitheater', 20000, 'event'],
+      ['Food', 'Veg Buffet', 650, 'plate'],
+      ['Food', 'Non-Veg Buffet', 850, 'plate'],
+      ['Food', 'Wedding Meal (per head)', 900, 'head'],
+      ['Other', 'Decoration Package', 12000, 'event'],
+      ['Other', 'DJ & Music', 10000, 'event']
     ]);
     svc.setFrozenRows(1);
-    svc.autoResizeColumns(1, 3);
+    svc.autoResizeColumns(1, 4);
   }
 
   // ---- Menu sheet (drives the Food menu picker in the Proposal builder). Category | Item | Price. ----
@@ -1410,6 +1462,37 @@ function setup() {
     menu.autoResizeColumns(1, 3);
   }
 
+  // ---- Settings sheet (Key | Value). Company details + repeatable Inclusion/Exclusion/Term rows. ----
+  if (!ss.getSheetByName('Settings')) {
+    var st = ss.insertSheet('Settings');
+    st.appendRow(['Key', 'Value']);
+    st.getRange(1, 1, 1, 2).setFontWeight('bold').setBackground('#1f4d46').setFontColor('#ffffff');
+    st.getRange(2, 1, 20, 2).setValues([
+      ['Company Name', COMPANY.name],
+      ['Tagline', COMPANY.tagline],
+      ['Address', COMPANY.address],
+      ['Mobile', COMPANY.phone],
+      ['Email', COMPANY.email],
+      ['Website', COMPANY.website],
+      ['GSTIN', COMPANY.gstin],
+      ['Brand Color', COMPANY.brandColor],
+      ['Accent Color', COMPANY.accent],
+      ['Inclusion', 'Complimentary breakfast'],
+      ['Inclusion', 'Wi-Fi access'],
+      ['Inclusion', 'Car parking'],
+      ['Inclusion', 'Welcome drink'],
+      ['Exclusion', 'Anything not mentioned above'],
+      ['Exclusion', 'Personal expenses / laundry'],
+      ['Exclusion', 'Early check-in / late check-out'],
+      ['Term', '50% advance to confirm the booking; balance on arrival.'],
+      ['Term', 'Prices valid until the date mentioned; subject to availability.'],
+      ['Term', 'GST charged as applicable and shown separately.'],
+      ['Term', 'Cancellation charges apply as per resort policy.']
+    ]);
+    st.setFrozenRows(1);
+    st.autoResizeColumns(1, 2);
+  }
+
   SpreadsheetApp.getUi && SpreadsheetApp.flush();
-  Logger.log('Setup complete. Users, Log, Rooms, Services and Menu sheets ready. Edit rows with real data.');
+  Logger.log('Setup complete. Users, Log, Rooms, Services, Menu and Settings sheets ready.');
 }

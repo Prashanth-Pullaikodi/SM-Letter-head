@@ -178,8 +178,9 @@
       var TEMPLATES = [];    // [{ key, label, form }]
       var ROOMS = [];        // [{ name, tariff }] for the Room dropdown
       var NEXT_INV = '';     // next invoice number for prefill
-      var SERVICES = {};     // { room:[{name,rate}], hall:[...], ... } for the Proposal builder
+      var SERVICES = {};     // { room:[{name,rate,unit}], hall:[...], ... } for the Proposal builder
       var MENU = {};         // { Starters:[{name,rate}], ... } for the Food menu picker
+      var SETTINGS = { inclusions: [], exclusions: [], terms: [], company: {} };
       var NEXT_PROP = '';    // next proposal number
       var DEFAULT_TERMS = '';
       var WATERMARK_PNG = '';  // base64 PNG of the tiled watermark (built from an uploaded logo)
@@ -282,8 +283,9 @@
         NEXT_INV = info.nextInvoiceNo || '';
         SERVICES = info.services || {};
         MENU = info.menu || {};
+        SETTINGS = info.settings || { inclusions: [], exclusions: [], terms: [], company: {} };
         NEXT_PROP = info.nextProposalNo || '';
-        DEFAULT_TERMS = info.defaultTerms || '';
+        DEFAULT_TERMS = (SETTINGS.terms || []).join('\n');
 
         // Build a tab per form that has a template, OR is a custom form (e.g. proposal).
         var tabsEl = $('tabs');
@@ -701,10 +703,10 @@
             '</div></div></div>' +
           '<div style="font-weight:700;font-size:.85rem;margin:6px 0 8px">Services (tick what you need)</div>' +
           '<div id="prop_modules"></div>' +
-          '<div class="field"><label>Inclusions (one per line)</label>' +
-            '<textarea id="prop_incl" placeholder="Complimentary breakfast&#10;Wi-Fi&#10;Parking"></textarea></div>' +
-          '<div class="field"><label>Exclusions (one per line)</label>' +
-            '<textarea id="prop_excl" placeholder="Anything not listed above&#10;Personal expenses"></textarea></div>' +
+          '<div class="field"><label>Inclusions</label><div id="prop_incl_list"></div>' +
+            '<textarea id="prop_incl_custom" placeholder="Add more, one per line (optional)" style="margin-top:8px;min-height:50px"></textarea></div>' +
+          '<div class="field"><label>Exclusions</label><div id="prop_excl_list"></div>' +
+            '<textarea id="prop_excl_custom" placeholder="Add more, one per line (optional)" style="margin-top:8px;min-height:50px"></textarea></div>' +
           '<div class="field"><label>Terms &amp; Conditions (one per line)</label>' +
             '<textarea id="prop_terms" style="min-height:110px"></textarea></div>' +
           '<div class="prop-mod" style="padding:12px 14px">' +
@@ -729,9 +731,37 @@
         $('prop_disctype').addEventListener('change', proposalRecalc);
         wireWatermark();
 
+        renderChecklist('prop_incl_list', SETTINGS.inclusions);
+        renderChecklist('prop_excl_list', SETTINGS.exclusions);
+
         var mc = $('prop_modules');
         PROP_MODULES.forEach(function (m) { mc.appendChild(buildModule(m[0], m[1], m[2])); });
         proposalRecalc();
+      }
+
+      function renderChecklist(id, options) {
+        var c = $(id); c.innerHTML = '';
+        options = options || [];
+        if (!options.length) {
+          c.innerHTML = '<div style="font-size:.76rem;color:var(--muted)">No preset items — add them in the Settings sheet, or type below.</div>';
+          return;
+        }
+        options.forEach(function (opt) {
+          var lab = document.createElement('label');
+          lab.style.cssText = 'display:flex;align-items:center;gap:8px;font-weight:400;margin:0 0 5px;cursor:pointer;font-size:.86rem';
+          var cb = document.createElement('input');
+          cb.type = 'checkbox'; cb.value = opt; cb.checked = true; cb.style.width = 'auto';
+          lab.appendChild(cb); lab.appendChild(document.createTextNode(opt));
+          c.appendChild(lab);
+        });
+      }
+      function gatherChecklist(listId, customId) {
+        var arr = [];
+        Array.prototype.forEach.call(document.querySelectorAll('#' + listId + ' input[type=checkbox]'), function (cb) {
+          if (cb.checked) arr.push(cb.value);
+        });
+        String($(customId).value).split('\n').forEach(function (l) { l = l.trim(); if (l) arr.push(l); });
+        return arr.join('\n');
       }
 
       function buildModule(key, title, cat) {
@@ -744,27 +774,34 @@
         wrap.appendChild(head);
 
         var bodyDiv = document.createElement('div'); bodyDiv.className = 'prop-mod-body'; bodyDiv.style.display = 'none';
-        // Food module picks from the Menu sheet (grouped by category); others use the Services list.
+        // Food -> Menu sheet; Rooms -> Rooms sheet; others -> Services list. Each carries a unit.
         var useMenu = (key === 'food' && Object.keys(MENU).length);
-        var svc = useMenu ? flattenMenu() : (SERVICES[cat] || []);
+        var svc;
+        if (useMenu) svc = flattenMenu();
+        else if (key === 'rooms' && ROOMS.length) svc = ROOMS.map(function (r) { return { name: r.name, rate: r.tariff, unit: r.unit || 'night' }; });
+        else svc = SERVICES[cat] || [];
+
         var quick = '';
         if (useMenu) {
           quick = '<select class="prop-quick" style="margin-bottom:8px"><option value="">+ Add dish from menu...</option>';
           Object.keys(MENU).forEach(function (mcat) {
             quick += '<optgroup label="' + escapeHtml(mcat) + '">';
             MENU[mcat].forEach(function (s) {
-              quick += '<option value="' + escapeHtml(s.name) + '|' + s.rate + '">' + escapeHtml(s.name) + ' (Rs.' + s.rate + ')</option>';
+              quick += '<option value="' + escapeHtml(s.name) + '|' + s.rate + '|plate">' + escapeHtml(s.name) + ' (Rs.' + s.rate + ')</option>';
             });
             quick += '</optgroup>';
           });
           quick += '</select>';
         } else if (svc.length) {
           quick = '<select class="prop-quick" style="margin-bottom:8px"><option value="">+ Quick add from list...</option>' +
-            svc.map(function (s, i) { return '<option value="' + i + '">' + escapeHtml(s.name) + ' (Rs.' + s.rate + ')</option>'; }).join('') + '</select>';
+            svc.map(function (s) {
+              return '<option value="' + escapeHtml(s.name) + '|' + s.rate + '|' + escapeHtml(s.unit || '') + '">' +
+                escapeHtml(s.name) + ' (Rs.' + s.rate + (s.unit ? ' / ' + escapeHtml(s.unit) : '') + ')</option>';
+            }).join('') + '</select>';
         }
         bodyDiv.innerHTML = quick +
-          '<table class="li-table"><thead><tr><th style="width:44%">Description</th><th style="width:13%">Qty</th>' +
-          '<th style="width:18%">Rate</th><th style="width:18%;text-align:right">Amount</th><th></th></tr></thead><tbody></tbody></table>' +
+          '<table class="li-table"><thead><tr><th style="width:38%">Description</th><th style="width:11%">Qty</th>' +
+          '<th style="width:15%">Unit</th><th style="width:16%">Rate</th><th style="width:16%;text-align:right">Amount</th><th></th></tr></thead><tbody></tbody></table>' +
           '<button type="button" class="li-add prop-add">+ Add item</button>' +
           '<div class="prop-mod-sub">Subtotal: Rs. <span class="sub">0</span> &middot; GST <span class="gr">-</span>%</div>';
         wrap.appendChild(bodyDiv);
@@ -781,9 +818,8 @@
         var q = bodyDiv.querySelector('.prop-quick');
         if (q) q.addEventListener('change', function () {
           if (this.value === '') return;
-          var s;
-          if (this.value.indexOf('|') !== -1) { var parts = this.value.split('|'); s = { name: parts[0], rate: parts[1] }; }
-          else { s = svc[parseInt(this.value, 10)]; }
+          var parts = this.value.split('|');
+          var s = { name: parts[0], rate: parts[1] || '', unit: parts[2] || '' };
           var firstEmpty = null;
           Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (tr) {
             if (!firstEmpty && !tr.querySelector('.li-item').value.trim()) firstEmpty = tr;
@@ -791,8 +827,9 @@
           if (firstEmpty) {
             firstEmpty.querySelector('.li-item').value = s.name;
             firstEmpty.querySelector('.li-qty').value = '1';
+            firstEmpty.querySelector('.li-unit').value = s.unit;
             firstEmpty.querySelector('.li-rate').value = s.rate;
-          } else { addPropRow(tbody, hint, s.name, 1, s.rate); }
+          } else { addPropRow(tbody, hint, s.name, 1, s.rate, s.unit); }
           this.value = '';
           proposalRecalc();
         });
@@ -850,11 +887,12 @@
         return canvas.toDataURL('image/png').split(',')[1];
       }
 
-      function addPropRow(tbody, hint, item, qty, rate) {
+      function addPropRow(tbody, hint, item, qty, rate, unit) {
         var tr = document.createElement('tr');
         tr.innerHTML =
           '<td><input class="li-item" type="text" placeholder="' + escapeHtml(hint) + '"></td>' +
           '<td><input class="li-qty" type="number" min="0" step="1" placeholder="1"></td>' +
+          '<td><input class="li-unit" type="text" placeholder="night/head"></td>' +
           '<td><input class="li-rate" type="number" min="0" step="0.01" placeholder="0"></td>' +
           '<td class="li-amt">0</td>' +
           '<td><button type="button" class="li-del" title="Remove">x</button></td>';
@@ -862,11 +900,12 @@
         if (item != null) tr.querySelector('.li-item').value = item;
         if (qty != null) tr.querySelector('.li-qty').value = qty;
         if (rate != null) tr.querySelector('.li-rate').value = rate;
+        if (unit != null) tr.querySelector('.li-unit').value = unit;
         tr.querySelector('.li-qty').addEventListener('input', proposalRecalc);
         tr.querySelector('.li-rate').addEventListener('input', proposalRecalc);
         tr.querySelector('.li-del').addEventListener('click', function () {
           if (tbody.rows.length > 1) tbody.removeChild(tr);
-          else { tr.querySelector('.li-item').value = ''; tr.querySelector('.li-qty').value = ''; tr.querySelector('.li-rate').value = ''; }
+          else { tr.querySelector('.li-item').value = ''; tr.querySelector('.li-qty').value = ''; tr.querySelector('.li-unit').value = ''; tr.querySelector('.li-rate').value = ''; }
           proposalRecalc();
         });
       }
@@ -930,9 +969,10 @@
           Array.prototype.forEach.call(m.wrap.querySelectorAll('tbody tr'), function (tr) {
             var item = tr.querySelector('.li-item').value.trim();
             var qty = tr.querySelector('.li-qty').value.trim();
+            var unit = tr.querySelector('.li-unit').value.trim();
             var rate = tr.querySelector('.li-rate').value.trim();
             if (!item && !qty && !rate) return;
-            items.push({ item: item, qty: qty, rate: rate });
+            items.push({ item: item, qty: qty, unit: unit, rate: rate });
           });
           if (items.length) out.push({ key: m.key, title: propTitle(m.key), items: items });
         });
@@ -945,8 +985,8 @@
           modules: out,
           discountType: $('prop_disctype').value,
           discountValue: $('prop_disc').value,
-          inclusions: $('prop_incl').value,
-          exclusions: $('prop_excl').value,
+          inclusions: gatherChecklist('prop_incl_list', 'prop_incl_custom'),
+          exclusions: gatherChecklist('prop_excl_list', 'prop_excl_custom'),
           terms: $('prop_terms').value,
           watermarkPng: ($('prop_wm_en') && $('prop_wm_en').checked) ? WATERMARK_PNG : ''
         };

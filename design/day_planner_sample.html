@@ -1,0 +1,183 @@
+<style>
+  :root{
+    --slate:#39434b; --ink:#22303c; --copper:#b06a3a; --copper-soft:#c07d4f;
+    --gold:#c9a24b; --leaf:#69bd45; --paper:#ffffff; --cream:#faf8f3;
+    --text:#413d37; --muted:#8f897f; --line:#ece6db; --line-strong:#ddd4c6;
+    --rail:#f3efe7; --backdrop:#e7e3db;
+  }
+  @media (prefers-color-scheme:dark){ :root{ --backdrop:#1b1e21; } }
+  :root[data-theme="dark"]{ --backdrop:#1b1e21; }
+  :root[data-theme="light"]{ --backdrop:#e7e3db; }
+
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--backdrop);
+    font-family:"Segoe UI",-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    color:var(--text); padding:28px 16px; -webkit-font-smoothing:antialiased; }
+  .sheet{ max-width:820px; margin:0 auto; background:var(--paper);
+    box-shadow:0 18px 60px rgba(20,24,28,.28); border-radius:3px; overflow:hidden; }
+
+  .band{ background:#fff; padding:20px 40px 16px; display:flex; align-items:center;
+    justify-content:space-between; gap:24px; border-bottom:1px solid var(--line); }
+  .logo{ height:96px; width:auto; display:block; }
+  .contact{ text-align:right; font-size:11px; line-height:1.7; color:var(--muted); }
+  .contact strong{ color:var(--slate); font-weight:700; font-size:12.5px; }
+  .goldline{ height:3px; background:linear-gradient(90deg,var(--copper),var(--gold)); }
+
+  .doc{ padding:28px 40px 20px; }
+  .title{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap;
+    border-bottom:1px solid var(--line); padding-bottom:14px; margin-bottom:6px; }
+  .title h1{ font-family:Georgia,serif; font-weight:600; color:var(--slate); font-size:23px;
+    letter-spacing:2px; margin:0; }
+  .title .ev{ font-size:12.5px; color:var(--muted); text-align:right; line-height:1.6; }
+  .title .ev b{ color:var(--ink); }
+
+  /* ---- day card ---- */
+  .day{ display:grid; grid-template-columns:112px 1fr; margin-top:20px;
+    border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .day-rail{ background:var(--rail); border-right:1px solid var(--line); padding:18px 14px; text-align:center;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:4px; }
+  .day-rail .lab{ font-size:9.5px; letter-spacing:2.5px; text-transform:uppercase; color:var(--muted); }
+  .day-rail .num{ font-family:Georgia,serif; font-size:46px; line-height:.9; color:var(--copper); font-weight:700; }
+  .day-rail .date{ font-size:11px; color:var(--slate); font-weight:600; margin-top:4px; }
+  .day-rail .theme{ font-size:10.5px; color:var(--muted); font-style:italic; margin-top:8px; line-height:1.4; }
+
+  .day-body{ padding:16px 20px 14px; }
+  .timeline{ position:relative; margin:2px 0 4px; padding-left:14px; }
+  .timeline::before{ content:""; position:absolute; left:4px; top:6px; bottom:10px; width:2px; background:var(--line-strong); }
+  .t{ position:relative; display:grid; grid-template-columns:64px 1fr; gap:12px; padding:6px 0; }
+  .t::before{ content:""; position:absolute; left:-13px; top:11px; width:9px; height:9px; border-radius:50%;
+    background:var(--copper); box-shadow:0 0 0 3px var(--paper); }
+  .t .time{ font-size:11.5px; font-weight:700; color:var(--slate); font-variant-numeric:tabular-nums; padding-top:1px; }
+  .t .act{ font-size:12.5px; }
+  .t .act b{ color:var(--ink); }
+  .t .act .n{ display:block; font-size:11px; color:var(--muted); margin-top:1px; }
+
+  .incl{ margin-top:12px; border-top:1px dashed var(--line-strong); padding-top:11px; }
+  .incl .lab{ font-size:9.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:7px; }
+  .chips{ display:flex; flex-wrap:wrap; gap:7px; }
+  .chip{ display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--ink);
+    background:var(--cream); border:1px solid var(--line-strong); border-radius:20px; padding:4px 11px; }
+  .chip::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--leaf); }
+  .chip.dry::before{ background:var(--copper); }
+
+  .legend{ margin-top:20px; background:var(--cream); border:1px solid var(--line); border-radius:10px;
+    padding:12px 16px; font-size:11.5px; color:var(--muted); line-height:1.6; }
+  .legend b{ color:var(--slate); }
+
+  .foot{ margin-top:20px; background:var(--slate); color:#aeb5ba; font-size:10.5px; text-align:center;
+    padding:12px 20px; letter-spacing:.4px; }
+  .foot strong{ color:#fff; }
+  .callout{ font-size:11px; color:var(--muted); text-align:center; margin:14px auto 0; max-width:820px; }
+
+  @media (max-width:640px){ .band{ flex-direction:column; align-items:flex-start; } .contact{ text-align:left; }
+    .day{ grid-template-columns:1fr; } .day-rail{ flex-direction:row; gap:12px; justify-content:flex-start;
+    border-right:none; border-bottom:1px solid var(--line); } .t{ grid-template-columns:58px 1fr; } .doc{ padding:24px; } }
+</style>
+
+<div class="sheet">
+  <div class="band">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 340 210" xmlns="http://www.w3.org/2000/svg" aria-label="SandalMist — The Hilltop Habitat">
+        <path d="M20 120 C80 46 130 32 168 60 C184 44 206 44 222 63 C244 88 278 110 322 118"
+              fill="none" stroke="#16273a" stroke-width="3.2" stroke-linecap="round"/>
+        <g fill="#69bd45">
+          <ellipse cx="176" cy="72" rx="6.6" ry="13" transform="rotate(-24 176 72)"/>
+          <ellipse cx="176" cy="72" rx="6.6" ry="13" transform="rotate(24 176 72)"/>
+          <ellipse cx="176" cy="92" rx="5.4" ry="11" transform="rotate(-22 176 92)"/>
+          <ellipse cx="176" cy="92" rx="5.4" ry="11" transform="rotate(22 176 92)"/>
+        </g>
+        <text x="170" y="166" text-anchor="middle" font-family="'Segoe Script','Brush Script MT',cursive" font-size="54" font-style="italic">
+          <tspan fill="#b06a3a">Sandal</tspan><tspan fill="#16273a">Mist</tspan>
+        </text>
+        <text x="171" y="193" text-anchor="middle" font-family="Georgia,serif" font-size="12.5" letter-spacing="6" fill="#6b7075">THE HILLTOP HABITAT</text>
+      </svg>
+    </div>
+    <div class="contact">
+      <strong>SandalMist Resort &amp; Spa</strong><br>
+      The Hilltop Habitat · Munnad, Kasaragod<br>
+      Mob: +91 97784 34442 · www.sandalmistresort.com
+    </div>
+  </div>
+  <div class="goldline"></div>
+
+  <div class="doc">
+    <div class="title">
+      <h1>EVENT ITINERARY</h1>
+      <div class="ev">
+        <b>Ramesh &amp; Family — Wedding Celebration</b><br>
+        3 Nights · 40 Guests · 18–20 July 2026
+      </div>
+    </div>
+
+    <!-- DAY 1 -->
+    <div class="day">
+      <div class="day-rail">
+        <div class="lab">Day</div><div class="num">01</div>
+        <div class="date">Fri, 18 Jul</div>
+        <div class="theme">Arrival &amp; Welcome</div>
+      </div>
+      <div class="day-body">
+        <div class="timeline">
+          <div class="t"><div class="time">12:00</div><div class="act"><b>Check-in &amp; welcome drink</b><span class="n">Rooms ready · luggage assistance</span></div></div>
+          <div class="t"><div class="time">13:30</div><div class="act"><b>Lunch</b><span class="n">Kerala thali at the hilltop restaurant</span></div></div>
+          <div class="t"><div class="time">16:30</div><div class="act"><b>High tea &amp; property walk</b><span class="n">Guided walk to the mist point</span></div></div>
+          <div class="t"><div class="time">19:30</div><div class="act"><b>Welcome dinner &amp; bonfire</b><span class="n">Live music by the lawn</span></div></div>
+        </div>
+        <div class="incl">
+          <div class="lab">Included today</div>
+          <div class="chips"><span class="chip">Lunch</span><span class="chip">High Tea</span><span class="chip">Dinner</span><span class="chip dry">Bonfire</span><span class="chip dry">Live Music</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAY 2 -->
+    <div class="day">
+      <div class="day-rail">
+        <div class="lab">Day</div><div class="num">02</div>
+        <div class="date">Sat, 19 Jul</div>
+        <div class="theme">The Main Event</div>
+      </div>
+      <div class="day-body">
+        <div class="timeline">
+          <div class="t"><div class="time">08:00</div><div class="act"><b>Breakfast</b><span class="n">Buffet at the terrace</span></div></div>
+          <div class="t"><div class="time">10:30</div><div class="act"><b>Muhurtham &amp; ceremony</b><span class="n">Amphitheater · décor &amp; seating arranged</span></div></div>
+          <div class="t"><div class="time">13:00</div><div class="act"><b>Grand wedding lunch</b><span class="n">Sadhya on banana leaf</span></div></div>
+          <div class="t"><div class="time">18:00</div><div class="act"><b>Reception</b><span class="n">Function hall · stage &amp; lighting</span></div></div>
+          <div class="t"><div class="time">20:30</div><div class="act"><b>Gala dinner</b><span class="n">Multi-cuisine buffet</span></div></div>
+        </div>
+        <div class="incl">
+          <div class="lab">Included today</div>
+          <div class="chips"><span class="chip">Breakfast</span><span class="chip">Lunch (Sadhya)</span><span class="chip">Dinner</span><span class="chip dry">Amphitheater</span><span class="chip dry">Function Hall</span><span class="chip dry">Décor &amp; Lighting</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAY 3 -->
+    <div class="day">
+      <div class="day-rail">
+        <div class="lab">Day</div><div class="num">03</div>
+        <div class="date">Sun, 20 Jul</div>
+        <div class="theme">Farewell</div>
+      </div>
+      <div class="day-body">
+        <div class="timeline">
+          <div class="t"><div class="time">08:30</div><div class="act"><b>Breakfast</b><span class="n">Leisurely, at your own pace</span></div></div>
+          <div class="t"><div class="time">11:00</div><div class="act"><b>Check-out</b><span class="n">Late check-out on request</span></div></div>
+          <div class="t"><div class="time">11:30</div><div class="act"><b>Farewell &amp; souvenirs</b><span class="n">A small keepsake from the hills</span></div></div>
+        </div>
+        <div class="incl">
+          <div class="lab">Included today</div>
+          <div class="chips"><span class="chip">Breakfast</span><span class="chip dry">Late Check-out</span><span class="chip dry">Souvenir</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <b>Note:</b> Timings are indicative and can be tailored to your programme. Green tags are meals &amp; refreshments; copper tags are venues &amp; experiences. Any activity can be added, moved or removed — just let us know.
+    </div>
+  </div>
+
+  <div class="foot"><strong>SandalMist Resort &amp; Spa</strong> &nbsp;·&nbsp; The Hilltop Habitat &nbsp;·&nbsp; www.sandalmistresort.com</div>
+</div>
+
+<p class="callout">Day-planner design sample · separate document for multi-day events · logo shown is a faithful vector re-creation.</p>

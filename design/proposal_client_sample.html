@@ -1,0 +1,258 @@
+<style>
+  :root{
+    --slate:#39434b; --ink:#2b333a; --copper:#b56d3f; --copper-soft:#c07d4f;
+    --gold:#c9a24b; --paper:#ffffff; --cream:#faf8f3; --band-text:#eceae6;
+    --text:#413d37; --muted:#8f897f; --line:#ece6db; --line-strong:#ddd4c6;
+    --zebra:#faf7f2; --good:#4a7c59; --bad:#b0553f;
+    --backdrop:#e7e3db;
+  }
+  @media (prefers-color-scheme:dark){ :root{ --backdrop:#1b1e21; } }
+  :root[data-theme="dark"]{ --backdrop:#1b1e21; }
+  :root[data-theme="light"]{ --backdrop:#e7e3db; }
+
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--backdrop);
+    font-family:"Segoe UI",-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    color:var(--text); padding:28px 16px; -webkit-font-smoothing:antialiased; }
+
+  .sheet{ max-width:820px; margin:0 auto; background:var(--paper);
+    box-shadow:0 18px 60px rgba(20,24,28,.28); border-radius:3px; overflow:hidden;
+    position:relative; }
+
+  /* faint tiled watermark preview */
+  .sheet::before{ content:""; position:absolute; inset:0; pointer-events:none; z-index:0;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='150' height='120'><g fill='none' stroke='%23b56d3f' stroke-width='2' opacity='0.05'><path d='M20 70 q40 -55 65 -8 q10 -22 25 -3'/></g></svg>");
+    background-repeat:repeat; }
+  .sheet > *{ position:relative; z-index:1; }
+
+  /* ---------- brand header band (light, shows the full-colour logo) ---------- */
+  .band{ background:#ffffff; padding:20px 40px 16px;
+    display:flex; align-items:center; justify-content:space-between; gap:24px; border-bottom:1px solid var(--line); }
+  .brand{ display:flex; align-items:center; }
+  .logo{ height:98px; width:auto; display:block; }
+  .contact{ text-align:right; font-size:11px; line-height:1.7; color:var(--muted); }
+  .contact strong{ color:var(--slate); font-weight:700; font-size:12.5px; }
+
+  .goldline{ height:3px; background:linear-gradient(90deg,var(--copper),var(--gold)); }
+
+  /* ---------- body ---------- */
+  .doc{ padding:30px 40px 20px; }
+
+  .title{ text-align:center; margin:2px 0 20px; }
+  .title h1{ font-family:Georgia,"Times New Roman",serif; font-weight:600; color:var(--slate);
+    font-size:22px; letter-spacing:3px; margin:0; }
+  .title .rule{ width:54px; height:2px; background:var(--copper); margin:8px auto 0; }
+
+  .meta{ display:flex; justify-content:space-between; gap:20px; font-size:12.5px;
+    border:1px solid var(--line); border-radius:8px; padding:14px 18px; background:var(--cream); }
+  .meta .lab{ text-transform:uppercase; letter-spacing:1.2px; font-size:9.5px; color:var(--muted); margin-bottom:3px; }
+  .meta .to{ font-size:15px; font-weight:700; color:var(--ink); }
+  .meta .co{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .meta .r{ text-align:right; }
+  .meta .r div{ margin-bottom:8px; }
+
+  .intro{ margin-top:16px; font-size:12.5px; line-height:1.7; color:var(--text); }
+  .intro p{ margin:0 0 8px; }
+  .intro p:first-child{ font-weight:600; color:var(--ink); }
+
+  .sec{ margin-top:22px; }
+  .sec-h{ display:flex; align-items:center; gap:10px; margin-bottom:9px; }
+  .sec-h .k{ font-family:Georgia,serif; font-size:13px; letter-spacing:2px; text-transform:uppercase;
+    color:var(--copper); font-weight:700; }
+  .sec-h .gst{ font-size:10px; color:var(--muted); border:1px solid var(--line-strong); border-radius:20px;
+    padding:2px 10px; letter-spacing:.5px; }
+  .sec-h .line{ flex:1; height:1px; background:var(--line); }
+
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; font-variant-numeric:tabular-nums; }
+  thead th{ text-align:left; font-size:9.5px; letter-spacing:1px; text-transform:uppercase; color:var(--muted);
+    font-weight:700; padding:7px 10px; border-bottom:1.5px solid var(--line-strong); }
+  th.num, td.num{ text-align:right; }
+  th.ctr, td.ctr{ text-align:center; }
+  tbody td{ padding:8px 10px; border-bottom:1px solid var(--line); color:var(--text); }
+  tbody tr:nth-child(even) td{ background:var(--zebra); }
+  tbody td .desc{ font-weight:600; color:var(--ink); }
+  tbody td .note{ font-size:10.5px; color:var(--muted); margin-top:1px; }
+  tr.sub td{ border-top:1.5px solid var(--line-strong); border-bottom:none; font-weight:700; color:var(--ink); background:none; padding-top:8px; }
+
+  /* totals */
+  .totals{ margin-top:16px; display:flex; justify-content:flex-end; }
+  .totals .box{ width:340px; font-size:12.5px; font-variant-numeric:tabular-nums; }
+  .totals .row{ display:flex; justify-content:space-between; padding:6px 12px; }
+  .totals .row.faint{ color:var(--muted); }
+  .totals .row.disc{ color:var(--bad); }
+  .totals .sep{ height:1px; background:var(--line); margin:4px 12px; }
+  .totals .grand{ display:flex; justify-content:space-between; align-items:center; padding:12px 14px; margin-top:6px;
+    background:var(--slate); color:#fff; border-radius:8px; }
+  .totals .grand .g-l{ font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#cdd3d7; }
+  .totals .grand .g-v{ font-size:20px; font-weight:700; font-family:Georgia,serif; }
+
+  /* inclusions / exclusions */
+  .ie{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:8px; }
+  .ie ul{ list-style:none; margin:0; padding:0; font-size:12px; }
+  .ie li{ display:flex; gap:9px; padding:4px 0; align-items:flex-start; line-height:1.4; }
+  .ie li .i{ flex:0 0 auto; width:16px; height:16px; border-radius:50%; display:grid; place-items:center;
+    font-size:10px; font-weight:800; margin-top:1px; }
+  .inc li .i{ background:rgba(74,124,89,.14); color:var(--good); }
+  .exc li .i{ background:rgba(176,85,63,.14); color:var(--bad); }
+
+  .terms{ margin-top:20px; }
+  .terms ol{ margin:6px 0 0; padding-left:18px; font-size:10.5px; color:var(--muted); line-height:1.7; }
+
+  .sign{ display:flex; justify-content:space-between; align-items:flex-end; margin-top:26px; }
+  .sign .note{ font-size:11.5px; font-style:italic; color:var(--muted); max-width:300px; }
+  .sign .auth{ text-align:right; }
+  .sign .auth .for{ font-family:Georgia,serif; font-size:14px; color:var(--copper); font-weight:700; }
+  .sign .auth .sg{ margin-top:26px; border-top:1px solid var(--line-strong); padding-top:5px; font-size:11px; color:var(--muted); }
+
+  .foot{ margin-top:22px; background:var(--slate); color:#aeb5ba; font-size:10.5px; text-align:center;
+    padding:12px 20px; letter-spacing:.4px; }
+  .foot strong{ color:#fff; }
+
+  .callout{ font-size:11px; color:var(--muted); text-align:center; margin:14px auto 0; max-width:820px; }
+  @media (max-width:640px){ .band{ flex-direction:column; align-items:flex-start; } .contact{ text-align:left; }
+    .ie{ grid-template-columns:1fr; } .totals .box{ width:100%; } .doc{ padding:24px; } }
+</style>
+
+<div class="sheet">
+
+  <div class="band">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 340 210" xmlns="http://www.w3.org/2000/svg" aria-label="SandalMist — The Hilltop Habitat">
+        <path d="M20 120 C80 46 130 32 168 60 C184 44 206 44 222 63 C244 88 278 110 322 118"
+              fill="none" stroke="#16273a" stroke-width="3.2" stroke-linecap="round"/>
+        <g fill="#69bd45">
+          <ellipse cx="176" cy="72" rx="6.6" ry="13" transform="rotate(-24 176 72)"/>
+          <ellipse cx="176" cy="72" rx="6.6" ry="13" transform="rotate(24 176 72)"/>
+          <ellipse cx="176" cy="92" rx="5.4" ry="11" transform="rotate(-22 176 92)"/>
+          <ellipse cx="176" cy="92" rx="5.4" ry="11" transform="rotate(22 176 92)"/>
+        </g>
+        <text x="170" y="166" text-anchor="middle" font-family="'Segoe Script','Brush Script MT',cursive" font-size="54" font-style="italic">
+          <tspan fill="#b06a3a">Sandal</tspan><tspan fill="#16273a">Mist</tspan>
+        </text>
+        <text x="171" y="193" text-anchor="middle" font-family="Georgia,serif" font-size="12.5" letter-spacing="6" fill="#6b7075">THE HILLTOP HABITAT</text>
+      </svg>
+    </div>
+    <div class="contact">
+      <strong>SandalMist Resort &amp; Spa</strong><br>
+      12/374, Sankar Hills, Munnad, Kasaragod, Kerala 671541<br>
+      Mob: +91 97784 34442 &nbsp;·&nbsp; info@sandalmistresort.com<br>
+      www.sandalmistresort.com &nbsp;·&nbsp; GSTIN 32AARFB1365N1Z6
+    </div>
+  </div>
+  <div class="goldline"></div>
+
+  <div class="doc">
+    <div class="title">
+      <h1>PROPOSAL &nbsp;/&nbsp; QUOTATION</h1>
+      <div class="rule"></div>
+    </div>
+
+    <div class="meta">
+      <div>
+        <div class="lab">Prepared For</div>
+        <div class="to">Mr. Ramesh Kumar</div>
+        <div class="co">Ramesh &amp; Family · Wedding Reception</div>
+      </div>
+      <div class="r">
+        <div><div class="lab">Proposal No.</div>PROP/2026/0042</div>
+        <div><div class="lab">Date · Valid Until</div>17 Jul 2026 &nbsp;·&nbsp; 31 Jul 2026</div>
+      </div>
+    </div>
+
+    <div class="intro">
+      <p>Dear Mr. Ramesh Kumar,</p>
+      <p>Thank you for thinking of SandalMist for your celebration — it would be our genuine pleasure to host you and your guests up here in the hills. We've put together the proposal below with your event in mind, arranging every detail so that on the day you can simply arrive, settle in, and enjoy. Do tell us what you'd like changed; nothing here is fixed, and we're happy to shape it around you.</p>
+    </div>
+
+    <!-- Rooms (per night) -->
+    <div class="sec">
+      <div class="sec-h"><span class="k">Rooms</span><span class="gst">GST 18%</span><span class="line"></span></div>
+      <table>
+        <thead><tr><th>Description</th><th class="ctr">Qty</th><th class="ctr">Unit</th><th class="num">Rate (₹)</th><th class="num">Amount (₹)</th></tr></thead>
+        <tbody>
+          <tr><td><span class="desc">Premium Room</span><div class="note">Deluxe hilltop view · breakfast included</div></td><td class="ctr">3</td><td class="ctr">night</td><td class="num">6,000</td><td class="num">18,000</td></tr>
+          <tr><td><span class="desc">Cottage</span><div class="note">Private balcony</div></td><td class="ctr">2</td><td class="ctr">night</td><td class="num">8,000</td><td class="num">16,000</td></tr>
+          <tr class="sub"><td colspan="4">Rooms Subtotal</td><td class="num">34,000</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 3-day full board, per head -->
+    <div class="sec">
+      <div class="sec-h"><span class="k">Residential Package · 3-Day Full Board</span><span class="gst">GST 18%</span><span class="line"></span></div>
+      <table>
+        <thead><tr><th>Description</th><th class="ctr">Pax</th><th class="ctr">Unit</th><th class="num">Rate (₹)</th><th class="num">Amount (₹)</th></tr></thead>
+        <tbody>
+          <tr><td><span class="desc">Full Onboarding Package — per head</span><div class="note">3 days stay + all meals (breakfast, lunch, dinner) + tea/snacks</div></td><td class="ctr">40</td><td class="ctr">pax</td><td class="num">4,500</td><td class="num">1,80,000</td></tr>
+          <tr class="sub"><td colspan="4">Package Subtotal</td><td class="num">1,80,000</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Food (per plate, extra) -->
+    <div class="sec">
+      <div class="sec-h"><span class="k">Additional Catering</span><span class="gst">GST 18%</span><span class="line"></span></div>
+      <table>
+        <thead><tr><th>Description</th><th class="ctr">Qty</th><th class="ctr">Unit</th><th class="num">Rate (₹)</th><th class="num">Amount (₹)</th></tr></thead>
+        <tbody>
+          <tr><td><span class="desc">Welcome Gala Dinner — Veg Buffet</span></td><td class="ctr">60</td><td class="ctr">plate</td><td class="num">650</td><td class="num">39,000</td></tr>
+          <tr class="sub"><td colspan="4">Catering Subtotal</td><td class="num">39,000</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Totals -->
+    <div class="totals">
+      <div class="box">
+        <div class="row"><span>Taxable Value</span><span>₹ 2,53,000</span></div>
+        <div class="row disc"><span>Discount (5%)</span><span>− ₹ 12,650</span></div>
+        <div class="row faint"><span>Net Taxable Value</span><span>₹ 2,40,350</span></div>
+        <div class="sep"></div>
+        <div class="row faint"><span>CGST @ 9%</span><span>₹ 21,631</span></div>
+        <div class="row faint"><span>SGST @ 9%</span><span>₹ 21,631</span></div>
+        <div class="grand"><span class="g-l">Grand Total</span><span class="g-v">₹ 2,83,612</span></div>
+      </div>
+    </div>
+
+    <!-- Inclusions / Exclusions -->
+    <div class="sec">
+      <div class="sec-h"><span class="k">Inclusions &amp; Exclusions</span><span class="line"></span></div>
+      <div class="ie">
+        <ul class="inc">
+          <li><span class="i">✓</span> Complimentary breakfast for all resident guests</li>
+          <li><span class="i">✓</span> High-speed Wi-Fi across the property</li>
+          <li><span class="i">✓</span> Car parking &amp; valet</li>
+          <li><span class="i">✓</span> Welcome drink on arrival</li>
+        </ul>
+        <ul class="exc">
+          <li><span class="i">✕</span> Anything not mentioned in this proposal</li>
+          <li><span class="i">✕</span> Personal expenses &amp; laundry</li>
+          <li><span class="i">✕</span> Early check-in / late check-out charges</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Terms -->
+    <div class="terms">
+      <div class="sec-h"><span class="k" style="font-size:12px">Terms &amp; Conditions</span><span class="line"></span></div>
+      <ol>
+        <li>50% advance is required to confirm the booking; balance payable on arrival.</li>
+        <li>Prices are valid until the date mentioned above and subject to availability.</li>
+        <li>GST is charged as applicable and shown separately above.</li>
+        <li>Cancellation charges apply as per resort policy.</li>
+      </ol>
+    </div>
+
+    <div class="sign">
+      <div class="note">We would be delighted to host your celebration at SandalMist. We look forward to welcoming you to the hilltop.</div>
+      <div class="auth">
+        <div class="for">For SandalMist Resort &amp; Spa</div>
+        <div class="sg">Authorised Signatory</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot"><strong>SandalMist Resort &amp; Spa</strong> &nbsp;·&nbsp; www.sandalmistresort.com &nbsp;·&nbsp; GSTIN 32AARFB1365N1Z6 &nbsp;·&nbsp; Page 1 of 1</div>
+</div>
+
+<p class="callout">Design sample for approval · the script wordmark is a stand-in for your actual logo (which will be embedded once uploaded).</p>

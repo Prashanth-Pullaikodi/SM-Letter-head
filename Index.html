@@ -174,7 +174,6 @@
       var NEXT_INV = '';     // next invoice number for prefill
       var activeForm = null;
       var curFields = [];    // field defs for the active form
-      var curGst = false;    // is the selected template a GST invoice?
       var editor = null;
       var btn, btnLabel, btnSpinner;
 
@@ -289,7 +288,6 @@
       function switchTab(formKey) {
         activeForm = formKey;
         curFields = (FORMS[formKey] && FORMS[formKey].fields) || [];
-        curGst = false;
 
         Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (t) {
           t.classList.toggle('active', t.getAttribute('data-form') === formKey);
@@ -354,18 +352,6 @@
             ni.addEventListener('input', recalc);
             wrap.appendChild(ni);
 
-          } else if (f.type === 'gstrate') {
-            var gi = document.createElement('input');
-            gi.type = 'number'; gi.id = 'fld_' + f.tag; gi.min = '0'; gi.step = '0.01';
-            gi.placeholder = 'auto'; gi.setAttribute('data-auto', '1');
-            gi.setAttribute('data-gstfor', f.gstFor || '');
-            gi.addEventListener('input', function () { this.setAttribute('data-auto', '0'); recalc(); });
-            wrap.appendChild(gi);
-            var note = document.createElement('div');
-            note.style.cssText = 'font-size:.72rem;color:var(--muted);margin-top:4px';
-            note.textContent = 'Auto: 18% if total > 7,500, else 5%. Edit to override.';
-            wrap.appendChild(note);
-
           } else if (f.type === 'select') {
             var se = document.createElement('select');
             se.id = 'fld_' + f.tag;
@@ -398,29 +384,11 @@
           err.className = 'field-error'; err.id = 'e_' + f.tag;
           err.textContent = f.label + ' is required.';
           wrap.appendChild(err);
-
-          if (f.gstOnly) { wrap.setAttribute('data-gstonly', '1'); wrap.style.display = 'none'; }
           container.appendChild(wrap);
         });
 
         editor = $('editor');
         if (editor) wireToolbar(editor);
-        toggleGstFields();
-        recalc();
-      }
-
-      function toggleGstFields() {
-        Array.prototype.forEach.call(document.querySelectorAll('[data-gstonly="1"]'), function (w) {
-          w.style.display = curGst ? '' : 'none';
-        });
-      }
-
-      /* When the template changes, GST visibility/totals depend on whether it's a GST invoice. */
-      function onTemplateChange() {
-        var key = $('template').value;
-        var t = TEMPLATES.filter(function (x) { return x.key === key; })[0];
-        curGst = !!(t && t.gst);
-        toggleGstFields();
         recalc();
       }
 
@@ -503,43 +471,16 @@
         return total;
       }
       function setComputed(tag, val) { var el = $('fld_' + tag); if (el) el.value = String(val); }
-
-      /* Returns the GST rate for a section. Auto-defaults (18% if subtotal>7500 else 5%) until
-         the user overrides it (then data-auto flips to 0 and the typed value is kept). */
-      function gstRateFor(section, subtotal) {
-        var el = $('fld_' + section + '_GST_RATE');
-        if (!el) return 0;
-        if (el.getAttribute('data-auto') === '1') {
-          var def = subtotal > 7500 ? 18 : 5;
-          el.value = def;
-          return def;
-        }
-        return num(el.value);
-      }
-
       function recalc() {
         var roomBox = document.querySelector('[data-lineitems="ROOM_DETAILS"]');
         var foodBox = document.querySelector('[data-lineitems="FOOD_DETAILS"]');
         if (!roomBox && !foodBox) return;  // not the invoice form
         var roomTotal = roomBox ? lineItemsTotal(roomBox) : 0;
         var foodTotal = foodBox ? lineItemsTotal(foodBox) : 0;
+        var grand = roomTotal + foodTotal;
+        var advance = num($('fld_ADVANCE_PAID') ? $('fld_ADVANCE_PAID').value : 0);
         setComputed('ROOM_TOTAL', roomTotal.toFixed(0));
         setComputed('FOOD_TOTAL', foodTotal.toFixed(0));
-
-        var totalGst = 0;
-        if (curGst) {
-          var roomGst = roomTotal * gstRateFor('ROOM', roomTotal) / 100;
-          var foodGst = foodTotal * gstRateFor('FOOD', foodTotal) / 100;
-          totalGst = roomGst + foodGst;
-          setComputed('ROOM_GST_AMT', roomGst.toFixed(0));
-          setComputed('FOOD_GST_AMT', foodGst.toFixed(0));
-          setComputed('TOTAL_GST', totalGst.toFixed(0));
-        } else {
-          setComputed('ROOM_GST_AMT', '0'); setComputed('FOOD_GST_AMT', '0'); setComputed('TOTAL_GST', '0');
-        }
-
-        var grand = roomTotal + foodTotal + totalGst;
-        var advance = num($('fld_ADVANCE_PAID') ? $('fld_ADVANCE_PAID').value : 0);
         setComputed('GRAND_TOTAL', grand.toFixed(0));
         setComputed('BALANCE', (grand - advance).toFixed(0));
       }
@@ -691,7 +632,6 @@
       /* ---------- init ---------- */
       btn = $('generateBtn'); btnLabel = $('btnLabel'); btnSpinner = $('btnSpinner');
       btn.addEventListener('click', submitForm);
-      $('template').addEventListener('change', onTemplateChange);
       loadSession();
     });
   </script>

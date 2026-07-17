@@ -960,32 +960,34 @@ function generateLetter(formData) {
       }
     });
 
-    // ---- 3. RENDER THE PDF (dispatch by template type) ------------------------------------
-    var pdfBlob;
+    // ---- 3. RENDER (dispatch by template type) -> { pdf, docx } (docx null for Slides) ----
+    var out;
     if (tpl.type === 'doc') {
       if (!tpl.docId || tpl.docId.indexOf('PASTE_') === 0) {
         return { ok: false, error: 'Template "' + tpl.label + '" has no Doc ID set in Code.gs.' };
       }
-      pdfBlob = renderFromDocTemplate_(tpl.docId, fields, user, tpl.label, fieldList);
+      out = renderFromDocTemplate_(tpl.docId, fields, user, tpl.label, fieldList);
     } else if (tpl.type === 'slides') {
       if (!tpl.slidesId || tpl.slidesId.indexOf('PASTE_') === 0) {
         return { ok: false, error: 'Template "' + tpl.label + '" has no Slides ID set in Code.gs.' };
       }
-      pdfBlob = renderFromSlidesTemplate_(tpl.slidesId, fields, user, tpl.label, fieldList);
+      out = renderFromSlidesTemplate_(tpl.slidesId, fields, user, tpl.label, fieldList);
     } else {
-      pdfBlob = renderFromBuiltinTemplate_(tpl, fields, fieldList);
+      out = renderFromBuiltinTemplate_(tpl, fields, fieldList);
     }
 
     // ---- 4. LOG (audit trail) + advance invoice counter -----------------------------------
     logGeneration_(user, templateKey);
     if (tpl.form === 'invoice') bumpInvoiceNo_();
 
-    // ---- 5. RETURN AS BASE64 --------------------------------------------------------------
-    var outName = (tpl.form === 'invoice') ? 'Invoice.pdf' : 'Generated_Letterhead.pdf';
+    // ---- 5. RETURN base64 PDF + DOCX ------------------------------------------------------
+    var baseName = (tpl.form === 'invoice') ? 'Invoice' : (tpl.form === 'proposal' ? 'Proposal' : 'Letterhead');
     return {
       ok: true,
-      fileName: outName,
-      base64: Utilities.base64Encode(pdfBlob.getBytes())
+      pdfBase64: out.pdf,
+      docxBase64: out.docx || null,   // null for Slides templates (no Word equivalent)
+      pdfName: baseName + '.pdf',
+      docxName: baseName + '.docx'
     };
 
   } catch (err) {
@@ -1061,7 +1063,10 @@ function renderFromDocTemplate_(docId, fields, user, label, fieldList) {
     var doc = DocumentApp.openById(copyId);
     applyFieldsToDoc_(doc.getBody(), fields, fieldList);
     doc.saveAndClose();
-    return DriveApp.getFileById(copyId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
+    return {
+      pdf: Utilities.base64Encode(DriveApp.getFileById(copyId).getAs('application/pdf').getBytes()),
+      docx: Utilities.base64Encode(exportDocx_(copyId).getBytes())
+    };
   } finally {
     try { DriveApp.getFileById(copyId).setTrashed(true); } catch (e) {}
   }
@@ -1069,6 +1074,7 @@ function renderFromDocTemplate_(docId, fields, user, label, fieldList) {
 
 /**
  * SLIDES TEMPLATE: copy the deck, replace all {TAG} placeholders (plain text), export PDF, delete.
+ * (No DOCX — a slide deck has no Word equivalent.)
  */
 function renderFromSlidesTemplate_(slidesId, fields, user, label, fieldList) {
   var copy = getTemplateFile_(slidesId, label).makeCopy('TEMP_Letter_' + user.email + '_' + Date.now());
@@ -1077,7 +1083,10 @@ function renderFromSlidesTemplate_(slidesId, fields, user, label, fieldList) {
     var pres = SlidesApp.openById(copyId);
     applyFieldsToSlides_(pres, fields, fieldList);
     pres.saveAndClose();
-    return DriveApp.getFileById(copyId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
+    return {
+      pdf: Utilities.base64Encode(DriveApp.getFileById(copyId).getAs('application/pdf').getBytes()),
+      docx: null
+    };
   } finally {
     try { DriveApp.getFileById(copyId).setTrashed(true); } catch (e) {}
   }
@@ -1133,7 +1142,10 @@ function renderFromBuiltinTemplate_(tpl, fields, fieldList) {
     insertRichBody_(body, '{LETTER_BODY}', bodyHtml);
 
     doc.saveAndClose();
-    return DriveApp.getFileById(docId).getAs('application/pdf').setName('Generated_Letterhead.pdf');
+    return {
+      pdf: Utilities.base64Encode(DriveApp.getFileById(docId).getAs('application/pdf').getBytes()),
+      docx: Utilities.base64Encode(exportDocx_(docId).getBytes())
+    };
   } finally {
     try { DriveApp.getFileById(docId).setTrashed(true); } catch (e) {}
   }

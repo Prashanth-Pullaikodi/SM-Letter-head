@@ -631,8 +631,19 @@
       function onGenerated(res) {
         setLoading(false);
         if (!res || !res.ok) { showAlert('error', (res && res.error) ? res.error : 'Unknown error generating PDF.'); return; }
-        triggerDownload(res.base64, res.fileName || 'Generated.pdf');
-        showAlert('success', 'Your PDF has been generated and downloaded.');
+        var DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        // Auto-download the PDF, and offer both PDF + DOCX buttons.
+        triggerDownload(res.pdfBase64, res.pdfName || 'Generated.pdf', 'application/pdf');
+        var a = $('alert');
+        a.className = 'alert show success';
+        a.innerHTML = 'Generated — PDF downloaded.' +
+          '<div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:7px">' +
+          '<button type="button" class="li-add" id="dl_pdf">Download PDF</button>' +
+          (res.docxBase64 ? '<button type="button" class="li-add" id="dl_docx">Download DOCX</button>' : '') +
+          '</div>' +
+          (res.docxBase64 ? '' : '<div style="font-size:.75rem;color:var(--muted);margin-top:5px">DOCX isn\'t available for slide-based templates.</div>');
+        $('dl_pdf').addEventListener('click', function () { triggerDownload(res.pdfBase64, res.pdfName, 'application/pdf'); });
+        if (res.docxBase64) $('dl_docx').addEventListener('click', function () { triggerDownload(res.docxBase64, res.docxName, DOCX); });
         // If this was an invoice, advance the displayed invoice number for the next one.
         if (activeForm === 'invoice') {
           var inv = $('fld_INVOICE_NO');

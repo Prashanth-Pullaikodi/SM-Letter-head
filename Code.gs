@@ -273,6 +273,39 @@ function getSettings_() {
   };
 }
 
+/* ============================================================================================
+ *  COMPANY LOGO (uploaded from the app, stored as a Drive file, embedded in documents)
+ * ============================================================================================ */
+/** Saves an uploaded logo (base64) as a Drive file; stores its ID in Script Properties. */
+function saveLogo(base64, mime) {
+  try {
+    if (!getAuthorisedUser_()) return { ok: false, error: 'Not authorised.' };
+    if (!base64) return { ok: false, error: 'No image data received.' };
+    mime = mime || 'image/png';
+    var blob = Utilities.newBlob(Utilities.base64Decode(base64), mime, 'SandalMist_Logo');
+    var props = PropertiesService.getScriptProperties();
+    var oldId = props.getProperty('LOGO_FILE_ID');
+    if (oldId) { try { DriveApp.getFileById(oldId).setTrashed(true); } catch (e) {} }
+    var file = DriveApp.createFile(blob);
+    props.setProperty('LOGO_FILE_ID', file.getId());
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String(err && err.message ? err.message : err) }; }
+}
+function removeLogo() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('LOGO_FILE_ID');
+  if (id) { try { DriveApp.getFileById(id).setTrashed(true); } catch (e) {} }
+  props.deleteProperty('LOGO_FILE_ID');
+  return { ok: true };
+}
+function hasLogo_() { return !!PropertiesService.getScriptProperties().getProperty('LOGO_FILE_ID'); }
+function getLogoBlob_() {
+  try {
+    var id = PropertiesService.getScriptProperties().getProperty('LOGO_FILE_ID');
+    return id ? DriveApp.getFileById(id).getBlob() : null;
+  } catch (e) { return null; }
+}
+
 /* ---- Menu from the "Menu" sheet (Category | Item | Price) -> grouped by category (display name) ---- */
 function getMenu_() {
   try {
@@ -374,23 +407,17 @@ function generateProposal(data) {
     var netTaxable = taxable - discountAmt;
     var grand = netTaxable + totalCgst + totalSgst;
 
-    // ---- Build the Doc ----
+    // ---- Build both variants (Client + Internal) ----
     var settings = getSettings_();
-    var doc = DocumentApp.create('TEMP_Proposal_' + Date.now());
-    var docId = doc.getId();
-    var pdfBlob, docxBlob;
-    try {
-      buildProposalDoc_(doc, data, modules, {
-        taxable: taxable, discountType: discountType, discountVal: discountVal, discountAmt: discountAmt,
-        gstGroups: gstGroups, totalCgst: totalCgst, totalSgst: totalSgst, netTaxable: netTaxable, grand: grand
-      }, settings.company);
-      doc.saveAndClose();
+    var co = settings.company;
+    var logo = getLogoBlob_();
+    var totals = {
+      taxable: taxable, discountType: discountType, discountVal: discountVal, discountAmt: discountAmt,
+      gstGroups: gstGroups, totalCgst: totalCgst, totalSgst: totalSgst, netTaxable: netTaxable, grand: grand
+    };
 
-      pdfBlob = DriveApp.getFileById(docId).getAs('application/pdf');
-      docxBlob = exportDocx_(docId);
-    } finally {
-      try { DriveApp.getFileById(docId).setTrashed(true); } catch (e) {}
-    }
+    var client = renderProposalVariant_(data, modules, totals, co, logo, 'client');
+    var internal = renderProposalVariant_(data, modules, totals, co, logo, 'internal');
 
     logGeneration_(user, 'Proposal');
     bumpProposalNo_();
@@ -398,13 +425,28 @@ function generateProposal(data) {
     var base = 'Proposal_' + String(data.proposalNo || '').replace(/[^\w\-]/g, '_');
     return {
       ok: true,
-      pdfBase64: Utilities.base64Encode(pdfBlob.getBytes()),
-      docxBase64: Utilities.base64Encode(docxBlob.getBytes()),
-      pdfName: base + '.pdf',
-      docxName: base + '.docx'
+      clientPdf: client.pdf, clientDocx: client.docx,
+      internalPdf: internal.pdf, internalDocx: internal.docx,
+      clientPdfName: base + '_Client.pdf', clientDocxName: base + '_Client.docx',
+      internalPdfName: base + '_Internal.pdf', internalDocxName: base + '_Internal.docx'
     };
   } catch (err) {
     return { ok: false, error: 'Server error: ' + (err && err.message ? err.message : err) };
+  }
+}
+
+/** Builds one proposal variant (client|internal) as a temp Doc, returns base64 PDF + DOCX. */
+function renderProposalVariant_(data, modules, totals, co, logo, mode) {
+  var doc = DocumentApp.create('TEMP_Proposal_' + mode + '_' + Date.now());
+  var docId = doc.getId();
+  try {
+    buildProposalDoc_(doc, data, modules, totals, co, { mode: mode, logo: logo });
+    doc.saveAndClose();
+    var pdf = Utilities.base64Encode(DriveApp.getFileById(docId).getAs('application/pdf').getBytes());
+    var docx = Utilities.base64Encode(exportDocx_(docId).getBytes());
+    return { pdf: pdf, docx: docx };
+  } finally {
+    try { DriveApp.getFileById(docId).setTrashed(true); } catch (e) {}
   }
 }
 
@@ -422,32 +464,59 @@ function exportDocx_(docId) {
   return resp.getBlob().setName('Proposal.docx');
 }
 
-/** Renders a professionally-styled proposal into the document. `co` = resolved company info. */
-function buildProposalDoc_(doc, data, modules, t, co) {
+/** Renders a professionally-styled proposal into the document.
+ * @param opts { mode:'client'|'internal', logo: Blob|null } */
+function buildProposalDoc_(doc, data, modules, t, co, opts) {
+  opts = opts || {};
+  var mode = opts.mode || 'client';
   var brand = co.brandColor || '#1f4d46';
   var body = doc.getBody();
-  body.setMarginTop(70).setMarginBottom(60).setMarginLeft(54).setMarginRight(54);
+  body.setMarginTop(96).setMarginBottom(60).setMarginLeft(54).setMarginRight(54);
   var base = {};
   base[DocumentApp.Attribute.FONT_FAMILY] = 'Calibri';
   base[DocumentApp.Attribute.FONT_SIZE] = 10;
   base[DocumentApp.Attribute.FOREGROUND_COLOR] = '#333333';
   body.setAttributes(base);
 
-  // ---- Header (repeats every page) ----
+  // ---- Header (repeats every page): logo (auto-sized) or company name, + contact + rule ----
   var header = doc.addHeader();
   if (data.watermarkPng) {
     try { addWatermark_(doc, header, data.watermarkPng); } catch (wmErr) { Logger.log('watermark: ' + wmErr); }
   }
-  header.appendParagraph(co.name).setFontFamily('Georgia').setForegroundColor(brand).setBold(true).setFontSize(17).setSpacingAfter(0);
-  header.appendParagraph(co.tagline).setFontFamily('Georgia').setForegroundColor('#8a8a8a').setItalic(true).setBold(false).setFontSize(9).setSpacingAfter(1);
-  header.appendParagraph(co.address).setForegroundColor('#8a8a8a').setItalic(false).setFontSize(8).setSpacingAfter(0);
-  header.appendParagraph('Mob: ' + co.mobile + '   |   ' + co.email + '   |   ' + co.website)
-    .setForegroundColor('#8a8a8a').setFontSize(8);
+  if (opts.logo) {
+    try {
+      var hp = header.appendParagraph('');
+      hp.setAlignment(DocumentApp.HorizontalAlignment.CENTER).setSpacingAfter(2);
+      var img = hp.appendInlineImage(opts.logo);
+      // Scale any uploaded logo (even a huge one) to a tidy header size, keeping aspect ratio.
+      var maxH = 62, maxW = 230, w = img.getWidth() || maxW, h = img.getHeight() || maxH;
+      var scale = maxH / h; if (w * scale > maxW) scale = maxW / w;
+      img.setWidth(Math.round(w * scale)).setHeight(Math.round(h * scale));
+    } catch (imgErr) {
+      header.appendParagraph(co.name).setFontFamily('Georgia').setForegroundColor(brand).setBold(true).setFontSize(17);
+    }
+  } else {
+    header.appendParagraph(co.name).setFontFamily('Georgia').setForegroundColor(brand).setBold(true).setFontSize(17).setSpacingAfter(0);
+    header.appendParagraph(co.tagline).setFontFamily('Georgia').setForegroundColor('#8a8a8a').setItalic(true).setBold(false).setFontSize(9);
+  }
+  header.appendParagraph(co.address + '   ·   Mob: ' + co.mobile + '   ·   ' + co.email + '   ·   ' + co.website)
+    .setForegroundColor('#8a8a8a').setItalic(false).setBold(false).setFontSize(8)
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
   header.appendHorizontalRule();
 
   // ---- Footer (repeats every page) ----
   doc.addFooter().appendParagraph(co.name + '   |   ' + co.website + '   |   GSTIN: ' + co.gstin)
     .setForegroundColor('#9a9a9a').setFontSize(8).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+
+  // ---- Internal banner ----
+  if (mode === 'internal') {
+    var ib = body.appendTable([['INTERNAL COPY — NOT FOR CLIENT']]);
+    ib.setBorderWidth(0);
+    ib.getCell(0, 0).setBackgroundColor('#b03535').setPaddingTop(4).setPaddingBottom(4);
+    ib.getCell(0, 0).getChild(0).asParagraph().setForegroundColor('#ffffff').setBold(true).setFontSize(9.5)
+      .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    body.appendParagraph('').setFontSize(3);
+  }
 
   // ---- Title banner ----
   var banner = body.appendTable([['PROPOSAL  /  QUOTATION']]);
@@ -472,6 +541,19 @@ function buildProposalDoc_(doc, data, modules, t, co) {
     cell.editAsText().setFontSize(9).setForegroundColor('#666666');
   });
   body.appendParagraph('').setFontSize(3).setSpacingAfter(2);
+
+  // ---- Warm client intro (client copy only) ----
+  if (mode === 'client') {
+    var first = (data.recipientName || 'there');
+    body.appendParagraph('Dear ' + first + ',').setFontSize(10.5).setForegroundColor('#222222').setBold(true).setSpacingAfter(3);
+    body.appendParagraph(
+      'Thank you for thinking of ' + co.name + ' for your celebration — it would be our genuine ' +
+      'pleasure to host you and your guests up here in the hills. We have put together the proposal below ' +
+      'with your event in mind, arranging every detail so that on the day you can simply arrive, settle in, ' +
+      'and enjoy. Do tell us what you would like changed; nothing here is fixed, and we would be glad to ' +
+      'shape it around you.')
+      .setFontSize(10).setForegroundColor('#444444').setSpacingAfter(4).setLineSpacing(1.25);
+  }
 
   // ---- Service sections ----
   modules.forEach(function (m) {
@@ -759,7 +841,8 @@ function getSessionInfo() {
     services: getServices_(),
     menu: getMenu_(),
     nextProposalNo: peekProposalNo_(),
-    settings: getSettings_()
+    settings: getSettings_(),
+    hasLogo: hasLogo_()
   };
 }
 

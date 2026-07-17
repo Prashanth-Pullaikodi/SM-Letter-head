@@ -181,6 +181,7 @@
       var SERVICES = {};     // { room:[{name,rate,unit}], hall:[...], ... } for the Proposal builder
       var MENU = {};         // { Starters:[{name,rate}], ... } for the Food menu picker
       var SETTINGS = { inclusions: [], exclusions: [], terms: [], company: {} };
+      var HAS_LOGO = false;  // whether a company logo is on file
       var NEXT_PROP = '';    // next proposal number
       var DEFAULT_TERMS = '';
       var WATERMARK_PNG = '';  // base64 PNG of the tiled watermark (built from an uploaded logo)
@@ -284,6 +285,7 @@
         SERVICES = info.services || {};
         MENU = info.menu || {};
         SETTINGS = info.settings || { inclusions: [], exclusions: [], terms: [], company: {} };
+        HAS_LOGO = !!info.hasLogo;
         NEXT_PROP = info.nextProposalNo || '';
         DEFAULT_TERMS = (SETTINGS.terms || []).join('\n');
 
@@ -688,6 +690,12 @@
       function buildProposalForm() {
         var c = $('fields');
         c.innerHTML =
+          '<div class="prop-mod" style="padding:12px 14px;margin-bottom:14px">' +
+            '<label style="margin:0"><strong>Company Logo</strong> ' +
+              '<span id="logo_status" style="font-weight:400;color:var(--muted);font-size:.8rem"></span></label>' +
+            '<input type="file" id="prop_logo" accept="image/png,image/jpeg,image/jpg,image/webp" style="margin-top:8px">' +
+            '<div style="font-size:.75rem;color:var(--muted);margin-top:4px">PNG/JPG/WEBP. Used on all documents; auto-sized to fit even if large. Saved &amp; remembered.</div>' +
+          '</div>' +
           '<div class="field"><label>Recipient Name <span class="req">*</span></label>' +
             '<input id="prop_name" type="text" placeholder="e.g. Mr. Ramesh Kumar"></div>' +
           '<div class="field"><label>Recipient Company</label>' +
@@ -729,6 +737,8 @@
         $('prop_terms').value = DEFAULT_TERMS;
         $('prop_disc').addEventListener('input', proposalRecalc);
         $('prop_disctype').addEventListener('change', proposalRecalc);
+        $('logo_status').textContent = HAS_LOGO ? '✓ logo on file' : '(none yet)';
+        $('prop_logo').addEventListener('change', function () { uploadLogo(this); });
         wireWatermark();
 
         renderChecklist('prop_incl_list', SETTINGS.inclusions);
@@ -840,6 +850,28 @@
         var out = [];
         Object.keys(MENU).forEach(function (c) { MENU[c].forEach(function (s) { out.push(s); }); });
         return out;
+      }
+
+      /* ---------- logo upload ---------- */
+      function uploadLogo(input) {
+        var f = input.files && input.files[0]; if (!f) return;
+        if (f.size > 6 * 1024 * 1024) { $('logo_status').textContent = 'too large (max 6 MB)'; return; }
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          var dataUrl = String(e.target.result);
+          var comma = dataUrl.indexOf(',');
+          var mime = dataUrl.slice(5, comma).split(';')[0] || 'image/png';
+          var b64 = dataUrl.slice(comma + 1);
+          $('logo_status').textContent = 'uploading…';
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (res && res.ok) { HAS_LOGO = true; $('logo_status').textContent = '✓ logo saved'; }
+              else { $('logo_status').textContent = 'error: ' + (res && res.error ? res.error : 'failed'); }
+            })
+            .withFailureHandler(function (err) { $('logo_status').textContent = 'error: ' + (err && err.message ? err.message : err); })
+            .saveLogo(b64, mime);
+        };
+        reader.readAsDataURL(f);
       }
 
       /* ---------- watermark ---------- */
@@ -1009,15 +1041,19 @@
         if (!res || !res.ok) { showAlert('error', (res && res.error) ? res.error : 'Error generating proposal.'); return; }
         lastProposal = res;
         var pn = $('prop_no'); if (pn) pn.value = nextInvoiceNo(pn.value);  // advance for next
+        var DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
         var a = $('alert');
         a.className = 'alert show success';
-        a.innerHTML = 'Proposal generated. ' +
-          '<button type="button" id="dlpdf" class="li-add" style="margin:6px 6px 0 0">Download PDF</button>' +
-          '<button type="button" id="dldocx" class="li-add" style="margin-top:6px">Download DOCX</button>';
-        $('dlpdf').addEventListener('click', function () { triggerDownload(res.pdfBase64, res.pdfName, 'application/pdf'); });
-        $('dldocx').addEventListener('click', function () {
-          triggerDownload(res.docxBase64, res.docxName, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-        });
+        a.innerHTML = 'Proposal generated — download below.' +
+          '<div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:7px">' +
+          '<button type="button" class="li-add" id="dl_cp">Client PDF</button>' +
+          '<button type="button" class="li-add" id="dl_cd">Client DOCX</button>' +
+          '<button type="button" class="li-add" id="dl_ip">Internal PDF</button>' +
+          '<button type="button" class="li-add" id="dl_id">Internal DOCX</button></div>';
+        $('dl_cp').addEventListener('click', function () { triggerDownload(res.clientPdf, res.clientPdfName, 'application/pdf'); });
+        $('dl_cd').addEventListener('click', function () { triggerDownload(res.clientDocx, res.clientDocxName, DOCX); });
+        $('dl_ip').addEventListener('click', function () { triggerDownload(res.internalPdf, res.internalPdfName, 'application/pdf'); });
+        $('dl_id').addEventListener('click', function () { triggerDownload(res.internalDocx, res.internalDocxName, DOCX); });
       }
 
       /* ---------- init ---------- */

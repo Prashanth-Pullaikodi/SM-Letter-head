@@ -83,9 +83,31 @@ const TEMPLATE_ROLE_RESTRICTIONS = {
   // 'memo': ['Admin', 'Manager']   // e.g. only Admins/Managers may issue Internal Memos
 };
 
+// 7) COMPANY details — used to brand the code-built Proposal (header/footer/GST). Edit freely.
+const COMPANY = {
+  name: 'SandalMist Resort & Spa',
+  tagline: 'The Hill Top Habitat',
+  address: '12/374, Sankar Hills, Munnad, Kasaragod, Kerala, 671541, India',
+  phone: '+91 97784 34442',
+  email: 'info@sandalmistresort.com',
+  website: 'www.sandalmistresort.com',
+  gstin: '32AARFB1365N1Z6',
+  brandColor: '#1f4d46',
+  accent: '#c9a24b'
+};
+
+// 8) Default Terms & Conditions prefilled in the Proposal builder (one per line; editable there).
+const DEFAULT_TERMS = [
+  '50% advance is required to confirm the booking; balance payable on arrival.',
+  'Prices are valid until the date mentioned above and subject to availability.',
+  'GST is charged as applicable and shown separately.',
+  'Cancellation charges apply as per resort policy.'
+];
+
 // 6) FORMS -> each form is a tab in the app with its own set of fields. A template belongs to a
 //    form via its `form` property (default 'letter'). Each field's `tag` becomes the placeholder
 //    {TAG} you put in the template. type: 'text' | 'textarea' | 'rich' (styled editor; max one).
+//    A form with `custom:true` (e.g. proposal) is rendered by a bespoke UI, not the generic fields.
 const FORMS = {
   letter: {
     label: 'Letter',
@@ -128,6 +150,11 @@ const FORMS = {
       { tag: 'ADVANCE_PAID', label: 'Advance Paid (Rs.)', type: 'number', placeholder: '0' },
       { tag: 'BALANCE',      label: 'Balance Payable (Rs.)', type: 'computed' }
     ]
+  },
+  proposal: {
+    label: 'Proposal',
+    custom: true,          // rendered by a bespoke UI (buildProposalForm) and generateProposal()
+    fields: []
   }
 };
 
@@ -169,9 +196,320 @@ function getRooms_() {
   } catch (e) { return []; }
 }
 
+/* ---- Proposal number counter ---- */
+function peekProposalNo_() {
+  var seq = parseInt(PropertiesService.getScriptProperties().getProperty('PROPOSAL_SEQ') || '0', 10) + 1;
+  return 'PROP/' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy') + '/' + padLeft_(seq, 4);
+}
+function bumpProposalNo_() {
+  var props = PropertiesService.getScriptProperties();
+  var seq = parseInt(props.getProperty('PROPOSAL_SEQ') || '0', 10) + 1;
+  props.setProperty('PROPOSAL_SEQ', String(seq));
+}
+
+/* ---- Services from the "Services" sheet (Category | Name | Rate) -> grouped by category ---- */
+function getServices_() {
+  try {
+    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Services');
+    if (!sh) return {};
+    var rows = sh.getDataRange().getValues();
+    var out = {};
+    for (var i = 1; i < rows.length; i++) {
+      var cat = String(rows[i][0] || '').trim();
+      var name = String(rows[i][1] || '').trim();
+      if (!cat || !name) continue;
+      var rate = rows[i].length > 2 ? Number(rows[i][2]) || 0 : 0;
+      var key = cat.toLowerCase();
+      if (!out[key]) out[key] = [];
+      out[key].push({ name: name, rate: rate });
+    }
+    return out;
+  } catch (e) { return {}; }
+}
+
+
+/* ============================================================================================
+ *  PROPOSAL BUILDER  ->  Google Doc  ->  PDF + DOCX
+ * ============================================================================================ */
+
+// GST rate rule: rooms/hall/amphitheater = 5% if subtotal <= 7500 else 18%; food/other = 18%.
+function gstRateForCategory_(key, subtotal) {
+  key = String(key).toLowerCase();
+  if (key === 'food' || key === 'other') return 18;
+  return subtotal > 7500 ? 18 : 5;
+}
+
+// Indian-grouped integer formatting: 1234567 -> 12,34,567
+function money_(n) {
+  n = Math.round(Number(n) || 0);
+  var neg = n < 0; var s = String(Math.abs(n));
+  var last3 = s.slice(-3), rest = s.slice(0, -3);
+  if (rest) rest = rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',';
+  return (neg ? '-' : '') + rest + last3;
+}
+
+/**
+ * Builds a branded proposal Google Doc from structured data, returns PDF + DOCX (base64).
+ * @param {Object} data { recipientName, recipientCompany, proposalNo, date, validUntil,
+ *                         modules:[{key,title,items:[{item,qty,rate}]}],
+ *                         discountType:'flat'|'percent', discountValue, inclusions, exclusions, terms }
+ */
+function generateProposal(data) {
+  try {
+    var user = getAuthorisedUser_();
+    if (!user) return { ok: false, error: 'Access denied: your account is not authorised.' };
+
+    data = data || {};
+    if (!String(data.recipientName || '').trim()) return { ok: false, error: 'Recipient name is required.' };
+
+    var modules = (data.modules || []).filter(function (m) {
+      return m && m.items && m.items.some(function (it) { return num_(it.qty) > 0 && num_(it.rate) > 0 || String(it.item || '').trim(); });
+    });
+    if (!modules.length) return { ok: false, error: 'Add at least one service item to the proposal.' };
+
+    // ---- Compute money ----
+    modules.forEach(function (m) {
+      m.rows = [];
+      m.subtotal = 0;
+      m.items.forEach(function (it) {
+        var name = String(it.item || '').trim();
+        var qty = num_(it.qty), rate = num_(it.rate);
+        if (!name && !qty && !rate) return;
+        var amt = qty * rate;
+        m.subtotal += amt;
+        m.rows.push({ name: name || 'Item', qty: qty, rate: rate, amt: amt });
+      });
+      m.gstRate = gstRateForCategory_(m.key, m.subtotal);
+    });
+
+    var taxable = 0;
+    modules.forEach(function (m) { taxable += m.subtotal; });
+
+    var discountType = (data.discountType === 'percent') ? 'percent' : 'flat';
+    var discountVal = num_(data.discountValue);
+    var discountAmt = discountType === 'percent' ? taxable * discountVal / 100 : Math.min(discountVal, taxable);
+    if (discountAmt < 0) discountAmt = 0;
+
+    // Per-module net (proportional discount) + GST grouped by rate.
+    var gstGroups = {}; // rate -> { taxable, cgst, sgst }
+    var totalCgst = 0, totalSgst = 0;
+    modules.forEach(function (m) {
+      var mDisc = taxable > 0 ? discountAmt * (m.subtotal / taxable) : 0;
+      m.net = m.subtotal - mDisc;
+      var gst = m.net * m.gstRate / 100;
+      var half = gst / 2;
+      totalCgst += half; totalSgst += half;
+      var key = String(m.gstRate);
+      if (!gstGroups[key]) gstGroups[key] = { taxable: 0, cgst: 0, sgst: 0 };
+      gstGroups[key].taxable += m.net;
+      gstGroups[key].cgst += half;
+      gstGroups[key].sgst += half;
+    });
+    var netTaxable = taxable - discountAmt;
+    var grand = netTaxable + totalCgst + totalSgst;
+
+    // ---- Build the Doc ----
+    var doc = DocumentApp.create('TEMP_Proposal_' + Date.now());
+    var docId = doc.getId();
+    var pdfBlob, docxBlob;
+    try {
+      buildProposalDoc_(doc, data, modules, {
+        taxable: taxable, discountType: discountType, discountVal: discountVal, discountAmt: discountAmt,
+        gstGroups: gstGroups, totalCgst: totalCgst, totalSgst: totalSgst, netTaxable: netTaxable, grand: grand
+      });
+      doc.saveAndClose();
+
+      pdfBlob = DriveApp.getFileById(docId).getAs('application/pdf');
+      docxBlob = exportDocx_(docId);
+    } finally {
+      try { DriveApp.getFileById(docId).setTrashed(true); } catch (e) {}
+    }
+
+    logGeneration_(user, 'Proposal');
+    bumpProposalNo_();
+
+    var base = 'Proposal_' + String(data.proposalNo || '').replace(/[^\w\-]/g, '_');
+    return {
+      ok: true,
+      pdfBase64: Utilities.base64Encode(pdfBlob.getBytes()),
+      docxBase64: Utilities.base64Encode(docxBlob.getBytes()),
+      pdfName: base + '.pdf',
+      docxName: base + '.docx'
+    };
+  } catch (err) {
+    return { ok: false, error: 'Server error: ' + (err && err.message ? err.message : err) };
+  }
+}
+
+function num_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+/** Exports a Google Doc as .docx via the Drive export endpoint. */
+function exportDocx_(docId) {
+  var mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  var url = 'https://www.googleapis.com/drive/v3/files/' + docId + '/export?mimeType=' + encodeURIComponent(mime);
+  var resp = UrlFetchApp.fetch(url, {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  if (resp.getResponseCode() !== 200) throw new Error('DOCX export failed: ' + resp.getContentText().slice(0, 200));
+  return resp.getBlob().setName('Proposal.docx');
+}
+
+/** Renders all proposal content into the document. */
+function buildProposalDoc_(doc, data, modules, t) {
+  var body = doc.getBody();
+  body.setMarginTop(54).setMarginBottom(54).setMarginLeft(56).setMarginRight(56);
+
+  // ---- Header (repeats every page) ----
+  var header = doc.addHeader();
+  header.appendParagraph(COMPANY.name).setForegroundColor(COMPANY.brandColor).setBold(true).setFontSize(18);
+  header.appendParagraph(COMPANY.tagline).setForegroundColor('#777777').setFontSize(9).setBold(false).setItalic(true);
+  var hc = header.appendParagraph(COMPANY.address + '   |   ' + COMPANY.phone);
+  hc.setForegroundColor('#888888').setFontSize(8).setItalic(false);
+  header.appendHorizontalRule();
+
+  // ---- Footer (repeats every page) ----
+  var footer = doc.addFooter();
+  footer.appendParagraph(COMPANY.website + '   |   ' + COMPANY.email + '   |   GSTIN: ' + COMPANY.gstin)
+    .setForegroundColor('#888888').setFontSize(8).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+
+  // ---- Title ----
+  body.appendParagraph('PROPOSAL / QUOTATION')
+    .setForegroundColor(COMPANY.brandColor).setBold(true).setFontSize(16)
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER).setSpacingAfter(6);
+
+  // ---- Meta (To + numbers) ----
+  var meta = body.appendTable([
+    ['To:', 'Proposal No: ' + (data.proposalNo || '')],
+    [(data.recipientName || '') + (data.recipientCompany ? '\n' + data.recipientCompany : ''),
+     'Date: ' + (data.date || '') + '\nValid Until: ' + (data.validUntil || '')]
+  ]);
+  clearTableBorders_(meta);
+  meta.getCell(0, 1).getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+  meta.getCell(1, 1).getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+  meta.getCell(0, 0).editAsText().setBold(true);
+  body.appendParagraph('').setSpacingAfter(4);
+
+  // ---- Service sections ----
+  modules.forEach(function (m) {
+    sectionHeading_(body, m.title + '  (GST ' + m.gstRate + '%)');
+    var rows = [['Description', 'Qty', 'Rate (Rs.)', 'Amount (Rs.)']];
+    m.rows.forEach(function (r) { rows.push([r.name, String(r.qty), money_(r.rate), money_(r.amt)]); });
+    rows.push(['Subtotal', '', '', money_(m.subtotal)]);
+    var tbl = body.appendTable(rows);
+    styleItemsTable_(tbl);
+  });
+
+  // ---- Charges summary ----
+  body.appendParagraph('').setSpacingAfter(2);
+  sectionHeading_(body, 'CHARGES SUMMARY');
+
+  var sumRows = [['', 'Amount (Rs.)']];
+  sumRows.push(['Taxable Value', money_(t.taxable)]);
+  if (t.discountAmt > 0) {
+    var dLabel = 'Discount' + (t.discountType === 'percent' ? ' (' + t.discountVal + '%)' : '');
+    sumRows.push([dLabel, '- ' + money_(t.discountAmt)]);
+    sumRows.push(['Net Taxable Value', money_(t.netTaxable)]);
+  }
+  Object.keys(t.gstGroups).sort(function (a, b) { return Number(a) - Number(b); }).forEach(function (rate) {
+    var half = Number(rate) / 2;
+    sumRows.push(['CGST @ ' + half + '%', money_(t.gstGroups[rate].cgst)]);
+    sumRows.push(['SGST @ ' + half + '%', money_(t.gstGroups[rate].sgst)]);
+  });
+  sumRows.push(['GRAND TOTAL', money_(t.grand)]);
+  var sTbl = body.appendTable(sumRows);
+  styleSummaryTable_(sTbl);
+
+  // ---- Inclusions / Exclusions ----
+  if (String(data.inclusions || '').trim()) {
+    sectionHeading_(body, 'INCLUSIONS');
+    addBullets_(body, data.inclusions, COMPANY.brandColor);
+  }
+  if (String(data.exclusions || '').trim()) {
+    sectionHeading_(body, 'EXCLUSIONS');
+    addBullets_(body, data.exclusions, '#b03535');
+  }
+
+  // ---- Terms ----
+  if (String(data.terms || '').trim()) {
+    sectionHeading_(body, 'TERMS & CONDITIONS');
+    String(data.terms).split('\n').forEach(function (line, i) {
+      line = line.trim(); if (!line) return;
+      body.appendListItem(line).setGlyphType(DocumentApp.GlyphType.NUMBER).setFontSize(9).setForegroundColor('#444444');
+    });
+  }
+
+  // ---- Sign-off ----
+  body.appendParagraph('').setSpacingAfter(10);
+  body.appendParagraph('For ' + COMPANY.name).setBold(true).setForegroundColor(COMPANY.brandColor).setSpacingBefore(16);
+  body.appendParagraph('Authorised Signatory').setItalic(true).setForegroundColor('#666666').setFontSize(9);
+}
+
+/* ---- proposal doc styling helpers ---- */
+function sectionHeading_(body, text) {
+  var p = body.appendParagraph(text);
+  p.setBold(true).setForegroundColor('#ffffff').setFontSize(10.5).setSpacingBefore(8).setSpacingAfter(4);
+  p.setBackgroundColor(COMPANY.brandColor);
+  p.editAsText().insertText(0, ' ');   // small left pad
+}
+
+function clearTableBorders_(tbl) {
+  tbl.setBorderWidth(0);
+}
+
+function styleItemsTable_(tbl) {
+  tbl.setBorderColor('#d9dee9').setBorderWidth(1);
+  var head = tbl.getRow(0);
+  for (var c = 0; c < head.getNumCells(); c++) {
+    head.getCell(c).setBackgroundColor(COMPANY.brandColor);
+    head.getCell(c).editAsText().setForegroundColor('#ffffff').setBold(true).setFontSize(9);
+  }
+  var nRows = tbl.getNumRows();
+  for (var r = 1; r < nRows; r++) {
+    var row = tbl.getRow(r);
+    for (var cc = 1; cc < row.getNumCells(); cc++) {
+      row.getCell(cc).getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+    }
+    row.getCell(0).editAsText().setFontSize(9);
+    // last (subtotal) row bold
+    if (r === nRows - 1) {
+      for (var k = 0; k < row.getNumCells(); k++) row.getCell(k).editAsText().setBold(true);
+    }
+  }
+}
+
+function styleSummaryTable_(tbl) {
+  tbl.setBorderColor('#d9dee9').setBorderWidth(1);
+  var nRows = tbl.getNumRows();
+  for (var r = 0; r < nRows; r++) {
+    var row = tbl.getRow(r);
+    row.getCell(1).getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+    row.getCell(0).editAsText().setFontSize(9.5);
+    row.getCell(1).editAsText().setFontSize(9.5);
+    if (r === 0) {
+      row.getCell(0).editAsText().setBold(true); row.getCell(1).editAsText().setBold(true);
+      row.getCell(0).setBackgroundColor('#eef3f1'); row.getCell(1).setBackgroundColor('#eef3f1');
+    }
+    if (r === nRows - 1) { // grand total
+      for (var k = 0; k < 2; k++) {
+        row.getCell(k).editAsText().setBold(true).setForegroundColor(COMPANY.brandColor).setFontSize(11);
+        row.getCell(k).setBackgroundColor('#eef3f1');
+      }
+    }
+  }
+}
+
+function addBullets_(body, text, color) {
+  String(text).split('\n').forEach(function (line) {
+    line = line.trim(); if (!line) return;
+    body.appendListItem(line).setGlyphType(DocumentApp.GlyphType.BULLET).setFontSize(9.5).setForegroundColor('#333333');
+  });
+}
+
 
 /**
  * RUN THIS ONCE to grant all permissions (Docs + Slides + Sheets + Drive) in a single consent.
+ * Because Apps Script authorizes lazily (only the scopes the run function uses), running setup()
  * Because Apps Script authorizes lazily (only the scopes the run function uses), running setup()
  * never asks for Slides. This function actively touches every service, so running it forces the
  * full authorization prompt — including "Google Slides presentations". Click Allow, then redeploy.
@@ -311,10 +649,10 @@ function getSessionInfo() {
       allowed.push({ key: key, label: TEMPLATES[key].label, form: TEMPLATES[key].form || 'letter' });
     }
   });
-  // Build a plain forms map (label + fields) for the frontend tabs.
+  // Build a plain forms map (label + fields + custom flag) for the frontend tabs.
   var forms = {};
   Object.keys(FORMS).forEach(function (k) {
-    forms[k] = { label: FORMS[k].label, fields: FORMS[k].fields };
+    forms[k] = { label: FORMS[k].label, fields: FORMS[k].fields, custom: FORMS[k].custom || false };
   });
   return {
     authorised: true,
@@ -324,7 +662,11 @@ function getSessionInfo() {
     role: user.role,
     templates: allowed,
     rooms: getRooms_(),
-    nextInvoiceNo: peekInvoiceNo_()
+    nextInvoiceNo: peekInvoiceNo_(),
+    services: getServices_(),
+    nextProposalNo: peekProposalNo_(),
+    defaultTerms: DEFAULT_TERMS.join('\n'),
+    company: { name: COMPANY.name, gstin: COMPANY.gstin }
   };
 }
 
@@ -982,6 +1324,28 @@ function setup() {
     rooms.autoResizeColumns(1, 2);
   }
 
+  // ---- Services sheet (drives the Proposal builder pickers). Category | Name | Rate. ----
+  // Categories: Room, Hall, Amphitheater, Food, Other (case-insensitive).
+  if (!ss.getSheetByName('Services')) {
+    var svc = ss.insertSheet('Services');
+    svc.appendRow(['Category', 'Name', 'Rate']);
+    svc.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#1f4d46').setFontColor('#ffffff');
+    svc.getRange(2, 1, 10, 3).setValues([
+      ['Room', 'Premium Room (per night)', 6000],
+      ['Room', 'Deluxe Room (per night)', 4500],
+      ['Room', 'Cottage (per night)', 8000],
+      ['Hall', 'Function Hall (half day)', 15000],
+      ['Hall', 'Function Hall (full day)', 25000],
+      ['Amphitheater', 'Amphitheater (per event)', 20000],
+      ['Food', 'Veg Buffet (per plate)', 650],
+      ['Food', 'Non-Veg Buffet (per plate)', 850],
+      ['Other', 'Decoration Package', 12000],
+      ['Other', 'DJ & Music (per event)', 10000]
+    ]);
+    svc.setFrozenRows(1);
+    svc.autoResizeColumns(1, 3);
+  }
+
   SpreadsheetApp.getUi && SpreadsheetApp.flush();
-  Logger.log('Setup complete. Users, Log and Rooms sheets ready. Replace sample rows with real data.');
+  Logger.log('Setup complete. Users, Log, Rooms and Services sheets ready. Edit rows with real data.');
 }

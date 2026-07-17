@@ -108,6 +108,12 @@
     .computed input { background:#eef3f1; font-weight:700; color:var(--brand); }
     .row2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
     @media (max-width:520px){ .row2 { grid-template-columns:1fr; } }
+    /* proposal modules */
+    .prop-mod { border:1px solid var(--border); border-radius:11px; margin-bottom:12px; overflow:hidden; }
+    .prop-mod-head { background:#f3f6f5; padding:11px 14px; }
+    .prop-mod-body { padding:12px 14px; border-top:1px solid var(--border); }
+    .prop-mod-sub { text-align:right; font-size:.8rem; color:var(--muted); margin-top:6px; }
+    .prop-sum { margin-top:6px; }
   </style>
 </head>
 <body>
@@ -172,9 +178,13 @@
       var TEMPLATES = [];    // [{ key, label, form }]
       var ROOMS = [];        // [{ name, tariff }] for the Room dropdown
       var NEXT_INV = '';     // next invoice number for prefill
+      var SERVICES = {};     // { room:[{name,rate}], hall:[...], ... } for the Proposal builder
+      var NEXT_PROP = '';    // next proposal number
+      var DEFAULT_TERMS = '';
       var activeForm = null;
       var curFields = [];    // field defs for the active form
       var editor = null;
+      var lastProposal = null;  // { pdfBase64, docxBase64, pdfName, docxName }
       var btn, btnLabel, btnSpinner;
 
       function $(id) { return document.getElementById(id); }
@@ -202,7 +212,13 @@
           '<p><strong>Flexible bill</strong><br>Leave <em>Room Charges</em> blank for a food-only bill, or <em>Food Items</em> blank for a room-only bill.</p>' +
           '<p><strong>Line items</strong><br>Type one item per line, e.g.<br><code>Onion Pakoda : 3 x 200 = 600</code></p>' +
           '<p><strong>Totals</strong><br>Enter Room Total, Food Total, Grand Total and Balance yourself (the values you compute).</p>' +
-          '<p><strong>Placeholders</strong><br>Each field fills its <code>{TAG}</code> in the invoice template (e.g. <code>{GUEST_NAME}</code>, <code>{FOOD_DETAILS}</code>, <code>{BALANCE}</code>).</p>'
+          '<p><strong>Placeholders</strong><br>Each field fills its <code>{TAG}</code> in the invoice template (e.g. <code>{GUEST_NAME}</code>, <code>{FOOD_DETAILS}</code>, <code>{BALANCE}</code>).</p>',
+        proposal:
+          '<p><strong>1. Tick the services</strong><br>Enable only what you need — Rooms, Hall, Amphitheater, Food, Other. Skip the rest.</p>' +
+          '<p><strong>2. Add items</strong><br>Use the quick-add dropdown (from your Services sheet) or add rows manually. Edit any qty/rate.</p>' +
+          '<p><strong>3. GST is automatic</strong><br>Rooms/Hall/Amphitheater: 5% up to Rs.7,500 else 18%. Food/Other: 18%. Shown as CGST + SGST.</p>' +
+          '<p><strong>4. Discount, inclusions, terms</strong><br>Add a % or flat discount, list inclusions/exclusions, edit terms.</p>' +
+          '<p><strong>5. Download</strong><br>Get both <strong>PDF</strong> and <strong>Word (DOCX)</strong>.</p>'
       };
 
       var TOOLBAR_HTML =
@@ -262,12 +278,15 @@
         TEMPLATES = info.templates || [];
         ROOMS = info.rooms || [];
         NEXT_INV = info.nextInvoiceNo || '';
+        SERVICES = info.services || {};
+        NEXT_PROP = info.nextProposalNo || '';
+        DEFAULT_TERMS = info.defaultTerms || '';
 
-        // Build a tab per form that actually has at least one template available to this user.
+        // Build a tab per form that has a template, OR is a custom form (e.g. proposal).
         var tabsEl = $('tabs');
         tabsEl.innerHTML = '';
         var formKeys = Object.keys(FORMS).filter(function (fk) {
-          return TEMPLATES.some(function (t) { return t.form === fk; });
+          return (FORMS[fk] && FORMS[fk].custom) || TEMPLATES.some(function (t) { return t.form === fk; });
         });
         formKeys.forEach(function (fk) {
           var b = document.createElement('button');
@@ -296,6 +315,15 @@
         $('formTitle').textContent = 'Compose ' + (FORMS[formKey].label || '');
         $('help').innerHTML = HELP[formKey] || '';
         hideAlert();
+
+        var isCustom = FORMS[formKey] && FORMS[formKey].custom;
+        $('f-template').style.display = isCustom ? 'none' : '';
+        $('btnLabel').textContent = (formKey === 'proposal') ? 'Generate Proposal' : 'Generate PDF';
+
+        if (isCustom && formKey === 'proposal') {
+          buildProposalForm();
+          return;
+        }
 
         // Templates for this form
         var sel = $('template');
@@ -597,12 +625,12 @@
         return m[1] + n + m[3];
       }
 
-      function triggerDownload(base64, fileName) {
+      function triggerDownload(base64, fileName, mime) {
         try {
           var bin = atob(base64);
           var bytes = new Uint8Array(bin.length);
           for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          var blob = new Blob([bytes], { type: 'application/pdf' });
+          var blob = new Blob([bytes], { type: mime || 'application/pdf' });
           var url = URL.createObjectURL(blob);
           var a = document.createElement('a');
           a.href = url; a.download = fileName;
@@ -614,7 +642,8 @@
       function setLoading(loading) {
         btn.disabled = loading;
         btnSpinner.style.display = loading ? 'block' : 'none';
-        btnLabel.textContent = loading ? 'Generating PDF, please wait...' : 'Generate PDF';
+        var idle = (activeForm === 'proposal') ? 'Generate Proposal' : 'Generate PDF';
+        btnLabel.textContent = loading ? 'Generating, please wait...' : idle;
       }
       function markError(key) {
         var fw = $('f_' + key) || $('f-' + key);
@@ -629,9 +658,250 @@
       function showAlert(type, msg) { var a = $('alert'); a.className = 'alert show ' + type; a.textContent = msg; }
       function hideAlert() { $('alert').className = 'alert'; }
 
+      /* =====================================================================================
+       *  PROPOSAL BUILDER (custom form)
+       * ===================================================================================== */
+      function moneyIN(n) {
+        n = Math.round(Number(n) || 0);
+        var neg = n < 0; var s = String(Math.abs(n));
+        var last3 = s.slice(-3), rest = s.slice(0, -3);
+        if (rest) rest = rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',';
+        return (neg ? '-' : '') + rest + last3;
+      }
+      var PROP_MODULES = [
+        ['rooms', 'Rooms', 'room'],
+        ['hall', 'Function Hall', 'hall'],
+        ['amphitheater', 'Amphitheater', 'amphitheater'],
+        ['food', 'Food / Catering', 'food'],
+        ['other', 'Other Services', 'other']
+      ];
+      function propTitle(key) {
+        for (var i = 0; i < PROP_MODULES.length; i++) if (PROP_MODULES[i][0] === key) return PROP_MODULES[i][1];
+        return key;
+      }
+
+      function buildProposalForm() {
+        var c = $('fields');
+        c.innerHTML =
+          '<div class="field"><label>Recipient Name <span class="req">*</span></label>' +
+            '<input id="prop_name" type="text" placeholder="e.g. Mr. Ramesh Kumar"></div>' +
+          '<div class="field"><label>Recipient Company</label>' +
+            '<input id="prop_company" type="text" placeholder="e.g. ABC Events Pvt. Ltd."></div>' +
+          '<div class="row2">' +
+            '<div class="field"><label>Proposal No.</label><input id="prop_no" type="text"></div>' +
+            '<div class="field"><label>Date</label><input id="prop_date" type="date"></div></div>' +
+          '<div class="row2">' +
+            '<div class="field"><label>Valid Until</label><input id="prop_valid" type="date"></div>' +
+            '<div class="field"><label>Discount</label><div style="display:flex;gap:8px">' +
+              '<input id="prop_disc" type="number" min="0" placeholder="0" style="flex:1">' +
+              '<select id="prop_disctype" style="width:80px"><option value="flat">Rs.</option><option value="percent">%</option></select>' +
+            '</div></div></div>' +
+          '<div style="font-weight:700;font-size:.85rem;margin:6px 0 8px">Services (tick what you need)</div>' +
+          '<div id="prop_modules"></div>' +
+          '<div class="field"><label>Inclusions (one per line)</label>' +
+            '<textarea id="prop_incl" placeholder="Complimentary breakfast&#10;Wi-Fi&#10;Parking"></textarea></div>' +
+          '<div class="field"><label>Exclusions (one per line)</label>' +
+            '<textarea id="prop_excl" placeholder="Anything not listed above&#10;Personal expenses"></textarea></div>' +
+          '<div class="field"><label>Terms &amp; Conditions (one per line)</label>' +
+            '<textarea id="prop_terms" style="min-height:110px"></textarea></div>' +
+          '<div class="prop-sum" id="prop_summary"></div>';
+
+        $('prop_no').value = NEXT_PROP;
+        $('prop_date').value = todayISO();
+        $('prop_terms').value = DEFAULT_TERMS;
+        $('prop_disc').addEventListener('input', proposalRecalc);
+        $('prop_disctype').addEventListener('change', proposalRecalc);
+
+        var mc = $('prop_modules');
+        PROP_MODULES.forEach(function (m) { mc.appendChild(buildModule(m[0], m[1], m[2])); });
+        proposalRecalc();
+      }
+
+      function buildModule(key, title, cat) {
+        var wrap = document.createElement('div');
+        wrap.className = 'prop-mod'; wrap.setAttribute('data-module', key); wrap.setAttribute('data-cat', cat);
+
+        var head = document.createElement('div'); head.className = 'prop-mod-head';
+        head.innerHTML = '<label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer">' +
+          '<input type="checkbox" class="prop-en" style="width:auto"> <strong>' + escapeHtml(title) + '</strong></label>';
+        wrap.appendChild(head);
+
+        var bodyDiv = document.createElement('div'); bodyDiv.className = 'prop-mod-body'; bodyDiv.style.display = 'none';
+        var svc = SERVICES[cat] || [];
+        var quick = '';
+        if (svc.length) {
+          quick = '<select class="prop-quick" style="margin-bottom:8px"><option value="">+ Quick add from list...</option>' +
+            svc.map(function (s, i) { return '<option value="' + i + '">' + escapeHtml(s.name) + ' (Rs.' + s.rate + ')</option>'; }).join('') + '</select>';
+        }
+        bodyDiv.innerHTML = quick +
+          '<table class="li-table"><thead><tr><th style="width:44%">Description</th><th style="width:13%">Qty</th>' +
+          '<th style="width:18%">Rate</th><th style="width:18%;text-align:right">Amount</th><th></th></tr></thead><tbody></tbody></table>' +
+          '<button type="button" class="li-add prop-add">+ Add item</button>' +
+          '<div class="prop-mod-sub">Subtotal: Rs. <span class="sub">0</span> &middot; GST <span class="gr">-</span>%</div>';
+        wrap.appendChild(bodyDiv);
+
+        var tbody = bodyDiv.querySelector('tbody');
+        var hint = title + ' item';
+        addPropRow(tbody, hint);
+
+        head.querySelector('.prop-en').addEventListener('change', function () {
+          bodyDiv.style.display = this.checked ? '' : 'none';
+          proposalRecalc();
+        });
+        bodyDiv.querySelector('.prop-add').addEventListener('click', function () { addPropRow(tbody, hint); proposalRecalc(); });
+        var q = bodyDiv.querySelector('.prop-quick');
+        if (q) q.addEventListener('change', function () {
+          if (this.value === '') return;
+          var s = svc[parseInt(this.value, 10)];
+          var firstEmpty = null;
+          Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (tr) {
+            if (!firstEmpty && !tr.querySelector('.li-item').value.trim()) firstEmpty = tr;
+          });
+          if (firstEmpty) {
+            firstEmpty.querySelector('.li-item').value = s.name;
+            firstEmpty.querySelector('.li-qty').value = '1';
+            firstEmpty.querySelector('.li-rate').value = s.rate;
+          } else { addPropRow(tbody, hint, s.name, 1, s.rate); }
+          this.value = '';
+          proposalRecalc();
+        });
+        return wrap;
+      }
+
+      function addPropRow(tbody, hint, item, qty, rate) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td><input class="li-item" type="text" placeholder="' + escapeHtml(hint) + '"></td>' +
+          '<td><input class="li-qty" type="number" min="0" step="1" placeholder="1"></td>' +
+          '<td><input class="li-rate" type="number" min="0" step="0.01" placeholder="0"></td>' +
+          '<td class="li-amt">0</td>' +
+          '<td><button type="button" class="li-del" title="Remove">x</button></td>';
+        tbody.appendChild(tr);
+        if (item != null) tr.querySelector('.li-item').value = item;
+        if (qty != null) tr.querySelector('.li-qty').value = qty;
+        if (rate != null) tr.querySelector('.li-rate').value = rate;
+        tr.querySelector('.li-qty').addEventListener('input', proposalRecalc);
+        tr.querySelector('.li-rate').addEventListener('input', proposalRecalc);
+        tr.querySelector('.li-del').addEventListener('click', function () {
+          if (tbody.rows.length > 1) tbody.removeChild(tr);
+          else { tr.querySelector('.li-item').value = ''; tr.querySelector('.li-qty').value = ''; tr.querySelector('.li-rate').value = ''; }
+          proposalRecalc();
+        });
+      }
+
+      function enabledModules() {
+        var out = [];
+        Array.prototype.forEach.call(document.querySelectorAll('.prop-mod'), function (w) {
+          var en = w.querySelector('.prop-en'); if (!en || !en.checked) return;
+          var cat = w.getAttribute('data-cat');
+          var tbody = w.querySelector('tbody');
+          var subtotal = 0;
+          Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (tr) {
+            var amt = num(tr.querySelector('.li-qty').value) * num(tr.querySelector('.li-rate').value);
+            tr.querySelector('.li-amt').textContent = amt ? amt.toFixed(0) : '0';
+            subtotal += amt;
+          });
+          var gstRate = (cat === 'food' || cat === 'other') ? 18 : (subtotal > 7500 ? 18 : 5);
+          var subEl = w.querySelector('.sub'); if (subEl) subEl.textContent = moneyIN(subtotal);
+          var grEl = w.querySelector('.gr'); if (grEl) grEl.textContent = gstRate;
+          out.push({ key: w.getAttribute('data-module'), cat: cat, subtotal: subtotal, gstRate: gstRate, wrap: w });
+        });
+        return out;
+      }
+
+      function proposalRecalc() {
+        var mods = enabledModules();
+        var taxable = 0;
+        mods.forEach(function (m) { taxable += m.subtotal; });
+        var discType = $('prop_disctype') ? $('prop_disctype').value : 'flat';
+        var discVal = num($('prop_disc') ? $('prop_disc').value : 0);
+        var discAmt = discType === 'percent' ? taxable * discVal / 100 : Math.min(discVal, taxable);
+        if (discAmt < 0) discAmt = 0;
+        var cgst = 0, sgst = 0;
+        mods.forEach(function (m) {
+          var mDisc = taxable > 0 ? discAmt * (m.subtotal / taxable) : 0;
+          var gst = (m.subtotal - mDisc) * m.gstRate / 100;
+          cgst += gst / 2; sgst += gst / 2;
+        });
+        var grand = (taxable - discAmt) + cgst + sgst;
+        var s = $('prop_summary');
+        if (!s) return;
+        function row(l, v, bold) {
+          return '<div style="display:flex;justify-content:space-between;padding:3px 0;' +
+            (bold ? 'font-weight:700;color:var(--brand);font-size:1.02rem;border-top:1px solid var(--border);margin-top:4px;padding-top:8px' : '') +
+            '"><span>' + l + '</span><span>Rs. ' + moneyIN(v) + '</span></div>';
+        }
+        var h = '<div style="margin-top:8px;background:#eef3f1;border-radius:10px;padding:12px 14px">';
+        h += row('Taxable Value', taxable);
+        if (discAmt > 0) h += row('Discount' + (discType === 'percent' ? ' (' + discVal + '%)' : ''), -discAmt);
+        h += row('CGST', cgst);
+        h += row('SGST', sgst);
+        h += row('Grand Total', grand, true);
+        h += '</div>';
+        s.innerHTML = h;
+      }
+
+      function collectProposal() {
+        var out = [];
+        enabledModules().forEach(function (m) {
+          var items = [];
+          Array.prototype.forEach.call(m.wrap.querySelectorAll('tbody tr'), function (tr) {
+            var item = tr.querySelector('.li-item').value.trim();
+            var qty = tr.querySelector('.li-qty').value.trim();
+            var rate = tr.querySelector('.li-rate').value.trim();
+            if (!item && !qty && !rate) return;
+            items.push({ item: item, qty: qty, rate: rate });
+          });
+          if (items.length) out.push({ key: m.key, title: propTitle(m.key), items: items });
+        });
+        return {
+          recipientName: $('prop_name').value.trim(),
+          recipientCompany: $('prop_company').value.trim(),
+          proposalNo: $('prop_no').value.trim(),
+          date: $('prop_date').value ? isoToDisplay($('prop_date').value) : '',
+          validUntil: $('prop_valid').value ? isoToDisplay($('prop_valid').value) : '',
+          modules: out,
+          discountType: $('prop_disctype').value,
+          discountValue: $('prop_disc').value,
+          inclusions: $('prop_incl').value,
+          exclusions: $('prop_excl').value,
+          terms: $('prop_terms').value
+        };
+      }
+
+      function submitProposal() {
+        clearErrors(); hideAlert();
+        var data = collectProposal();
+        if (!data.recipientName) { showAlert('error', 'Recipient name is required.'); $('prop_name').focus(); return; }
+        if (!data.modules.length) { showAlert('error', 'Enable at least one service and add an item.'); return; }
+        setLoading(true);
+        google.script.run
+          .withSuccessHandler(onProposalDone)
+          .withFailureHandler(function (err) { setLoading(false); showAlert('error', 'Generation failed: ' + (err && err.message ? err.message : err)); })
+          .generateProposal(data);
+      }
+
+      function onProposalDone(res) {
+        setLoading(false);
+        if (!res || !res.ok) { showAlert('error', (res && res.error) ? res.error : 'Error generating proposal.'); return; }
+        lastProposal = res;
+        var pn = $('prop_no'); if (pn) pn.value = nextInvoiceNo(pn.value);  // advance for next
+        var a = $('alert');
+        a.className = 'alert show success';
+        a.innerHTML = 'Proposal generated. ' +
+          '<button type="button" id="dlpdf" class="li-add" style="margin:6px 6px 0 0">Download PDF</button>' +
+          '<button type="button" id="dldocx" class="li-add" style="margin-top:6px">Download DOCX</button>';
+        $('dlpdf').addEventListener('click', function () { triggerDownload(res.pdfBase64, res.pdfName, 'application/pdf'); });
+        $('dldocx').addEventListener('click', function () {
+          triggerDownload(res.docxBase64, res.docxName, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        });
+      }
+
       /* ---------- init ---------- */
       btn = $('generateBtn'); btnLabel = $('btnLabel'); btnSpinner = $('btnSpinner');
-      btn.addEventListener('click', submitForm);
+      btn.addEventListener('click', function () {
+        if (activeForm === 'proposal') submitProposal(); else submitForm();
+      });
       loadSession();
     });
   </script>

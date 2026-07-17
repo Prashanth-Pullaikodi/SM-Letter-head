@@ -29,10 +29,20 @@
 //    You can mix all kinds freely. The KEY (e.g. 'official') must match the dropdown value.
 //    Both Doc and Slides templates must contain {RECIPIENT_DATA} and {LETTER_BODY} as text.
 const TEMPLATES = {
+  // Slides-based letterhead: gives PDF only (a slide deck has no Word/DOCX equivalent).
   'General': {
-    label: 'Official Corporate Letterhead',
+    label: 'Official Corporate Letterhead (Slides · PDF only)',
     type: 'slides',
     slidesId: '1Ux5sBKlJ-sLaHPgnaH953SJ1RH6ReOSylLEQFKpGeMc'   // Google Slides ID
+  },
+  // Built-in letterhead: code-built with your uploaded logo -> gives BOTH PDF and DOCX.
+  'letterhead': {
+    label: 'General Letterhead (PDF + DOCX)',
+    type: 'builtin',
+    companyName: 'SandalMist Resort & Spa',
+    tagline: 'The Hilltop Habitat',
+    color: '#39434b',
+    footer: ''   // blank = default footer (name | website | GSTIN)
   },
   'Proposal': {
     label: 'Room_Booking_Events_Proposal',
@@ -1101,30 +1111,47 @@ function renderFromBuiltinTemplate_(tpl, fields, fieldList) {
   var doc = DocumentApp.create('TEMP_Letter_' + Date.now());
   var docId = doc.getId();
   try {
-    var color = tpl.color || '#1a237e';
+    var co = getSettings_().company;
+    var logo = getLogoBlob_();
     var body = doc.getBody();
-    body.setMarginTop(56).setMarginBottom(56).setMarginLeft(64).setMarginRight(64);
+    body.setMarginTop(96).setMarginBottom(60).setMarginLeft(60).setMarginRight(60);
+    var b = {}; b[DocumentApp.Attribute.FONT_FAMILY] = 'Arial'; b[DocumentApp.Attribute.FONT_SIZE] = 10.5;
+    b[DocumentApp.Attribute.FOREGROUND_COLOR] = PROP_TEXT; body.setAttributes(b);
 
-    // --- Header (repeats on every page) ---
+    // --- Header: logo LEFT, contact RIGHT, gold rule (repeats every page) ---
     var header = doc.addHeader();
-    header.appendParagraph(tpl.companyName || 'SandalMist Resort & Spa')
-      .setForegroundColor(color).setBold(true).setFontSize(20);
-    if (tpl.tagline) {
-      header.appendParagraph(tpl.tagline).setForegroundColor('#777777').setFontSize(9).setBold(false);
+    var htbl = header.appendTable([['', '']]); htbl.setBorderWidth(0);
+    try { htbl.setColumnWidth(0, 215); htbl.setColumnWidth(1, 300); } catch (e) {}
+    var lc = htbl.getCell(0, 0), rc = htbl.getCell(0, 1);
+    lc.setPaddingTop(2).setPaddingBottom(2).setPaddingLeft(0).setPaddingRight(4);
+    rc.setPaddingTop(2).setPaddingBottom(2).setPaddingLeft(4).setPaddingRight(0);
+    var lp = lc.getChild(0).asParagraph();
+    if (logo) {
+      try {
+        var im = lp.appendInlineImage(logo);
+        var mH = 58, mW = 200, iw = im.getWidth() || mW, ih = im.getHeight() || mH;
+        var sc = mH / ih; if (iw * sc > mW) sc = mW / iw;
+        im.setWidth(Math.round(iw * sc)).setHeight(Math.round(ih * sc));
+      } catch (e) { lp.appendText(co.name).setBold(true).setFontFamily('Georgia').setForegroundColor(PROP_SLATE).setFontSize(16); }
+    } else {
+      lp.appendText(co.name).setBold(true).setFontFamily('Georgia').setForegroundColor(PROP_SLATE).setFontSize(16);
     }
-    header.appendHorizontalRule();
+    var r0 = rc.getChild(0).asParagraph(); r0.setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+    r0.appendText(co.name).setBold(true).setForegroundColor(PROP_SLATE).setFontSize(10).setFontFamily('Arial');
+    [co.address, 'Mob: ' + co.mobile + '   ·   ' + co.email, co.website + '   ·   GSTIN: ' + co.gstin].forEach(function (line) {
+      var p = rc.appendParagraph(line); p.setAlignment(DocumentApp.HorizontalAlignment.RIGHT).setSpacingBefore(0).setSpacingAfter(0);
+      p.editAsText().setFontSize(8).setBold(false).setForegroundColor(PROP_MUTED).setFontFamily('Arial');
+    });
+    goldRule_(header);
 
     // --- Footer ---
-    if (tpl.footer) {
-      doc.addFooter().appendParagraph(tpl.footer)
-        .setForegroundColor('#888888').setFontSize(8)
-        .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-    }
+    doc.addFooter().appendParagraph(tpl.footer || (co.name + '   |   ' + co.website + '   |   GSTIN: ' + co.gstin))
+      .setForegroundColor('#9a9a9a').setFontSize(8).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
 
     // --- Body: date, recipient block (non-rich fields), then rich content ---
     body.appendParagraph(
-      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MMMM d, yyyy'))
-      .setAlignment(DocumentApp.HorizontalAlignment.RIGHT).setForegroundColor('#444444');
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd MMMM yyyy'))
+      .setAlignment(DocumentApp.HorizontalAlignment.RIGHT).setForegroundColor('#666666').setFontSize(10);
 
     var bodyHtml = '';
     fieldList.forEach(function (f) {

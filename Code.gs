@@ -486,36 +486,47 @@ function buildProposalDoc_(doc, data, modules, t, co, opts) {
   var body = doc.getBody();
   body.setMarginTop(96).setMarginBottom(60).setMarginLeft(54).setMarginRight(54);
   var base = {};
-  base[DocumentApp.Attribute.FONT_FAMILY] = 'Calibri';
+  base[DocumentApp.Attribute.FONT_FAMILY] = 'Arial';
   base[DocumentApp.Attribute.FONT_SIZE] = 10;
   base[DocumentApp.Attribute.FOREGROUND_COLOR] = PROP_TEXT;
   body.setAttributes(base);
 
-  // ---- Header (repeats every page): logo (auto-sized) or company name, + contact + rule ----
+  // ---- Header (repeats every page): logo LEFT, contact RIGHT, gold rule ----
   var header = doc.addHeader();
   if (data.watermarkPng) {
     try { addWatermark_(doc, header, data.watermarkPng); } catch (wmErr) { Logger.log('watermark: ' + wmErr); }
   }
+  var htbl = header.appendTable([['', '']]);
+  htbl.setBorderWidth(0);
+  try { htbl.setColumnWidth(0, 215); htbl.setColumnWidth(1, 300); } catch (e) {}
+  var lcell = htbl.getCell(0, 0), rcell = htbl.getCell(0, 1);
+  lcell.setPaddingTop(2).setPaddingBottom(2).setPaddingLeft(0).setPaddingRight(4);
+  rcell.setPaddingTop(2).setPaddingBottom(2).setPaddingLeft(4).setPaddingRight(0);
+
+  var lp = lcell.getChild(0).asParagraph();
+  lp.setAlignment(DocumentApp.HorizontalAlignment.LEFT);
   if (opts.logo) {
     try {
-      var hp = header.appendParagraph('');
-      hp.setAlignment(DocumentApp.HorizontalAlignment.CENTER).setSpacingAfter(2);
-      var img = hp.appendInlineImage(opts.logo);
-      // Scale any uploaded logo (even a huge one) to a tidy header size, keeping aspect ratio.
-      var maxH = 62, maxW = 230, w = img.getWidth() || maxW, h = img.getHeight() || maxH;
+      var img = lp.appendInlineImage(opts.logo);
+      var maxH = 58, maxW = 200, w = img.getWidth() || maxW, h = img.getHeight() || maxH;
       var scale = maxH / h; if (w * scale > maxW) scale = maxW / w;
       img.setWidth(Math.round(w * scale)).setHeight(Math.round(h * scale));
-    } catch (imgErr) {
-      header.appendParagraph(co.name).setFontFamily('Georgia').setForegroundColor(brand).setBold(true).setFontSize(17);
+    } catch (e) {
+      lp.appendText(co.name).setBold(true).setFontFamily('Georgia').setForegroundColor(brand).setFontSize(16);
     }
   } else {
-    header.appendParagraph(co.name).setFontFamily('Georgia').setForegroundColor(brand).setBold(true).setFontSize(17).setSpacingAfter(0);
-    header.appendParagraph(co.tagline).setFontFamily('Georgia').setForegroundColor('#8a8a8a').setItalic(true).setBold(false).setFontSize(9);
+    lp.appendText(co.name).setBold(true).setFontFamily('Georgia').setForegroundColor(brand).setFontSize(16);
   }
-  header.appendParagraph(co.address + '   ·   Mob: ' + co.mobile + '   ·   ' + co.email + '   ·   ' + co.website)
-    .setForegroundColor(PROP_MUTED).setItalic(false).setBold(false).setFontSize(8)
-    .setAlignment(DocumentApp.HorizontalAlignment.CENTER).setSpacingAfter(3);
-  goldRule_(header);   // gold hairline instead of the grey default rule
+
+  var r0 = rcell.getChild(0).asParagraph();
+  r0.setAlignment(DocumentApp.HorizontalAlignment.RIGHT).setSpacingAfter(0);
+  r0.appendText(co.name).setBold(true).setForegroundColor(PROP_SLATE).setFontSize(10).setFontFamily('Arial');
+  [co.address, 'Mob: ' + co.mobile + '   ·   ' + co.email, co.website + '   ·   GSTIN: ' + co.gstin].forEach(function (line) {
+    var p = rcell.appendParagraph(line);
+    p.setAlignment(DocumentApp.HorizontalAlignment.RIGHT).setSpacingBefore(0).setSpacingAfter(0);
+    p.editAsText().setFontSize(8).setBold(false).setForegroundColor(PROP_MUTED).setFontFamily('Arial');
+  });
+  goldRule_(header);
 
   // ---- Footer (repeats every page) ----
   doc.addFooter().appendParagraph(co.name + '   |   ' + co.website + '   |   GSTIN: ' + co.gstin)
@@ -538,41 +549,55 @@ function buildProposalDoc_(doc, data, modules, t, co, opts) {
   goldRule_(body);
   body.appendParagraph('').setFontSize(3).setSpacingAfter(2);
 
-  // ---- Meta (To + numbers) ----
-  var meta = body.appendTable([
-    ['To:', 'Proposal No:   ' + (data.proposalNo || '')],
-    [(data.recipientName || '') + (data.recipientCompany ? '\n' + data.recipientCompany : ''),
-     'Date:   ' + (data.date || '') + '\nValid Until:   ' + (data.validUntil || '')]
-  ]);
+  // ---- Guest box (Prepared For on the left, numbers on the right) ----
+  var meta = body.appendTable([['', '']]);
   meta.setBorderColor(PROP_LINE).setBorderWidth(0.5);
-  for (var mr = 0; mr < 2; mr++) for (var mc = 0; mc < 2; mc++) {
-    meta.getCell(mr, mc).setBackgroundColor(PROP_CREAM).setPaddingTop(6).setPaddingBottom(6).setPaddingLeft(12).setPaddingRight(12);
-  }
-  meta.getCell(0, 0).editAsText().setBold(true).setForegroundColor(PROP_MUTED).setFontSize(9);
-  meta.getCell(1, 0).editAsText().setBold(true).setFontSize(11).setForegroundColor(PROP_INK);
-  [[0, 1], [1, 1]].forEach(function (rc) {
-    var cell = meta.getCell(rc[0], rc[1]);
-    cell.getChild(0).asParagraph().setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
-    cell.editAsText().setFontSize(9).setForegroundColor('#666666');
+  try { meta.setColumnWidth(0, 300); meta.setColumnWidth(1, 210); } catch (e) {}
+  var mL = meta.getCell(0, 0), mR = meta.getCell(0, 1);
+  [mL, mR].forEach(function (cl) {
+    cl.setBackgroundColor(PROP_CREAM).setPaddingTop(9).setPaddingBottom(9).setPaddingLeft(13).setPaddingRight(13);
   });
+  var lLab = mL.getChild(0).asParagraph();
+  lLab.appendText('PREPARED FOR');
+  lLab.editAsText().setFontSize(8).setBold(true).setForegroundColor(PROP_MUTED).setFontFamily('Arial');
+  lLab.setSpacingAfter(2);
+  var lName = mL.appendParagraph(data.recipientName || '');
+  lName.editAsText().setFontSize(12).setBold(true).setForegroundColor(PROP_INK).setFontFamily('Arial');
+  lName.setSpacingBefore(0).setSpacingAfter(0);
+  if (data.recipientCompany) {
+    var lCo = mL.appendParagraph(data.recipientCompany);
+    lCo.editAsText().setFontSize(9).setBold(false).setForegroundColor(PROP_MUTED).setFontFamily('Arial');
+    lCo.setSpacingBefore(1).setSpacingAfter(0);
+  }
+  function metaRight(label, val, first) {
+    var p = first ? mR.getChild(0).asParagraph() : mR.appendParagraph('');
+    p.setAlignment(DocumentApp.HorizontalAlignment.RIGHT).setSpacingBefore(0).setSpacingAfter(2);
+    p.appendText(label + '  ').setBold(true).setForegroundColor(PROP_MUTED).setFontSize(8).setFontFamily('Arial');
+    p.appendText(String(val || '')).setBold(false).setForegroundColor(PROP_INK).setFontSize(10).setFontFamily('Arial');
+  }
+  metaRight('PROPOSAL NO', data.proposalNo, true);
+  metaRight('DATE', data.date, false);
+  metaRight('VALID UNTIL', data.validUntil, false);
   body.appendParagraph('').setFontSize(3).setSpacingAfter(2);
 
-  // ---- Warm client intro (client copy only) ----
+  // ---- Warm client intro (client copy only; regular weight, clean sans) ----
   if (mode === 'client') {
     var first = (data.recipientName || 'there');
-    body.appendParagraph('Dear ' + first + ',').setFontSize(10.5).setForegroundColor('#222222').setBold(true).setSpacingAfter(3);
+    body.appendParagraph('Dear ' + first + ',')
+      .setFontFamily('Arial').setFontSize(10.5).setForegroundColor('#333333').setBold(false).setSpacingAfter(3);
     body.appendParagraph(
       'Thank you for thinking of ' + co.name + ' for your celebration — it would be our genuine ' +
       'pleasure to host you and your guests up here in the hills. We have put together the proposal below ' +
       'with your event in mind, arranging every detail so that on the day you can simply arrive, settle in, ' +
       'and enjoy. Do tell us what you would like changed; nothing here is fixed, and we would be glad to ' +
       'shape it around you.')
-      .setFontSize(10).setForegroundColor('#444444').setSpacingAfter(4).setLineSpacing(1.25);
+      .setFontFamily('Arial').setFontSize(10).setForegroundColor('#444444').setBold(false)
+      .setSpacingAfter(4).setLineSpacing(1.3);
   }
 
-  // ---- Service sections ----
+  // ---- Service sections (no GST in the heading; slab is applied in the summary) ----
   modules.forEach(function (m) {
-    sectionBar_(body, m.title.toUpperCase() + '    ·    GST ' + m.gstRate + '%', brand);
+    sectionBar_(body, m.title.toUpperCase(), brand);
     var rows = [['Description', 'Qty', 'Unit', 'Rate', 'Amount']];
     m.rows.forEach(function (r) { rows.push([r.name, String(r.qty), r.unit || '', money_(r.rate), money_(r.amt)]); });
     rows.push(['Subtotal', '', '', '', money_(m.subtotal)]);
@@ -594,6 +619,11 @@ function buildProposalDoc_(doc, data, modules, t, co, opts) {
   });
   sumRows.push(['GRAND TOTAL', 'Rs. ' + money_(t.grand)]);
   styleSummaryTable_(body.appendTable(sumRows), brand);
+
+  // GST slab note — which rate applied to which section.
+  var slabParts = modules.map(function (m) { return m.title + ' @ ' + m.gstRate + '%'; });
+  body.appendParagraph('GST slab applied:  ' + slabParts.join('    ·    '))
+    .setFontFamily('Arial').setFontSize(8).setForegroundColor(PROP_MUTED).setItalic(true).setSpacingBefore(3);
 
   // ---- Inclusions / Exclusions ----
   if (String(data.inclusions || '').trim()) { sectionBar_(body, 'INCLUSIONS', brand); addBullets_(body, data.inclusions, '#2e7d32', '✓'); }

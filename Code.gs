@@ -70,6 +70,7 @@ const TEMPLATES = {
   }
 };
 
+
 // 3) Name of the sheet that stores the RBAC user list.
 const USERS_SHEET_NAME = 'Users';
 
@@ -90,7 +91,7 @@ const FORMS = {
     label: 'Letter',
     fields: [
       { tag: 'RECIPIENT_NAME',    label: 'Recipient Name',    type: 'text',     required: true,
-        placeholder: 'e.g. Mr. Michael Johnson' },
+        placeholder: 'e.g. Mr. Ramesh Kumar' },
       { tag: 'RECIPIENT_COMPANY', label: 'Recipient Company', type: 'text',     required: false,
         placeholder: 'e.g. Nexus Technologies Pvt. Ltd.' },
       { tag: 'DATE',              label: 'Date',              type: 'text',     required: false, default: 'today',
@@ -120,14 +121,9 @@ const FORMS = {
       { tag: 'ROOM_DETAILS', label: 'Room Charges',    type: 'lineitems', totalTag: 'ROOM_TOTAL',
         itemPlaceholder: 'e.g. Premium Room Tariff' },
       { tag: 'ROOM_TOTAL',   label: 'Room Total (Rs.)', type: 'computed' },
-      { tag: 'ROOM_GST_RATE', label: 'Room GST %',     type: 'gstrate', gstFor: 'ROOM', gstOnly: true },
-      { tag: 'ROOM_GST_AMT',  label: 'Room GST (Rs.)', type: 'computed', gstOnly: true },
       { tag: 'FOOD_DETAILS', label: 'Food Items',      type: 'lineitems', totalTag: 'FOOD_TOTAL',
         itemPlaceholder: 'e.g. Paneer Butter Masala' },
       { tag: 'FOOD_TOTAL',   label: 'Food Total (Rs.)', type: 'computed' },
-      { tag: 'FOOD_GST_RATE', label: 'Food GST %',     type: 'gstrate', gstFor: 'FOOD', gstOnly: true },
-      { tag: 'FOOD_GST_AMT',  label: 'Food GST (Rs.)', type: 'computed', gstOnly: true },
-      { tag: 'TOTAL_GST',    label: 'Total GST (Rs.)', type: 'computed', gstOnly: true },
       { tag: 'GRAND_TOTAL',  label: 'Grand Total (Rs.)', type: 'computed' },
       { tag: 'ADVANCE_PAID', label: 'Advance Paid (Rs.)', type: 'number', placeholder: '0' },
       { tag: 'BALANCE',      label: 'Balance Payable (Rs.)', type: 'computed' }
@@ -312,8 +308,7 @@ function getSessionInfo() {
   var allowed = [];
   Object.keys(TEMPLATES).forEach(function (key) {
     if (roleCanUseTemplate_(user.role, key)) {
-      allowed.push({ key: key, label: TEMPLATES[key].label, form: TEMPLATES[key].form || 'letter',
-                     gst: TEMPLATES[key].gst || false });
+      allowed.push({ key: key, label: TEMPLATES[key].label, form: TEMPLATES[key].form || 'letter' });
     }
   });
   // Build a plain forms map (label + fields) for the frontend tabs.

@@ -732,6 +732,9 @@
             '</div></div></div>' +
           '<div style="font-weight:700;font-size:.85rem;margin:6px 0 8px">Services (tick what you need)</div>' +
           '<div id="prop_modules"></div>' +
+          '<div class="field"><label>Food Menu — Day-wise (optional)</label>' +
+            '<textarea id="prop_foodmenu" placeholder="Optional. One dish per line. Start a line with a day (e.g. &quot;First Day - 150 pax&quot; or &quot;Day 1&quot;) to open a day band. Leave blank for a single-night quote — no day plan needed." style="min-height:90px"></textarea>' +
+            '<div style="font-size:.74rem;color:var(--muted);margin-top:4px">Shown as day bands in the proposal. Skip it when you only quote one night.</div></div>' +
           '<div class="field"><label>Inclusions</label><div id="prop_incl_list"></div>' +
             '<textarea id="prop_incl_custom" placeholder="Add more, one per line (optional)" style="margin-top:8px;min-height:50px"></textarea></div>' +
           '<div class="field"><label>Exclusions</label><div id="prop_excl_list"></div>' +
@@ -825,27 +828,32 @@
                 escapeHtml(s.name) + ' (Rs.' + s.rate + (s.unit ? ' / ' + escapeHtml(s.unit) : '') + ')</option>';
             }).join('') + '</select>';
         }
+        var isRooms = (key === 'rooms');
+        var midLabel = isRooms ? 'Occupancy' : 'Unit';
+        var midPh = isRooms ? 'e.g. 2 adults' : 'night/head';
         bodyDiv.innerHTML = quick +
           '<table class="li-table"><thead><tr><th style="width:38%">Description</th><th style="width:11%">Qty</th>' +
-          '<th style="width:15%">Unit</th><th style="width:16%">Rate</th><th style="width:16%;text-align:right">Amount</th><th></th></tr></thead><tbody></tbody></table>' +
+          '<th style="width:15%">' + midLabel + '</th><th style="width:16%">Rate</th><th style="width:16%;text-align:right">Amount</th><th></th></tr></thead><tbody></tbody></table>' +
           '<button type="button" class="li-add prop-add">+ Add item</button>' +
           '<div class="prop-mod-sub">Subtotal: Rs. <span class="sub">0</span> &middot; GST <span class="gr">-</span>%</div>';
         wrap.appendChild(bodyDiv);
 
         var tbody = bodyDiv.querySelector('tbody');
         var hint = title + ' item';
-        addPropRow(tbody, hint);
+        addPropRow(tbody, hint, null, null, null, null, midPh);
 
         head.querySelector('.prop-en').addEventListener('change', function () {
           bodyDiv.style.display = this.checked ? '' : 'none';
           proposalRecalc();
         });
-        bodyDiv.querySelector('.prop-add').addEventListener('click', function () { addPropRow(tbody, hint); proposalRecalc(); });
+        bodyDiv.querySelector('.prop-add').addEventListener('click', function () { addPropRow(tbody, hint, null, null, null, null, midPh); proposalRecalc(); });
         var q = bodyDiv.querySelector('.prop-quick');
         if (q) q.addEventListener('change', function () {
           if (this.value === '') return;
           var parts = this.value.split('|');
           var s = { name: parts[0], rate: parts[1] || '', unit: parts[2] || '' };
+          // For rooms the middle column is Occupancy (typed by the user), so don't auto-fill it.
+          var midVal = isRooms ? '' : s.unit;
           var firstEmpty = null;
           Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (tr) {
             if (!firstEmpty && !tr.querySelector('.li-item').value.trim()) firstEmpty = tr;
@@ -853,9 +861,9 @@
           if (firstEmpty) {
             firstEmpty.querySelector('.li-item').value = s.name;
             firstEmpty.querySelector('.li-qty').value = '1';
-            firstEmpty.querySelector('.li-unit').value = s.unit;
+            firstEmpty.querySelector('.li-unit').value = midVal;
             firstEmpty.querySelector('.li-rate').value = s.rate;
-          } else { addPropRow(tbody, hint, s.name, 1, s.rate, s.unit); }
+          } else { addPropRow(tbody, hint, s.name, 1, s.rate, midVal, midPh); }
           this.value = '';
           proposalRecalc();
         });
@@ -941,12 +949,12 @@
         return canvas.toDataURL('image/png').split(',')[1];
       }
 
-      function addPropRow(tbody, hint, item, qty, rate, unit) {
+      function addPropRow(tbody, hint, item, qty, rate, unit, midPh) {
         var tr = document.createElement('tr');
         tr.innerHTML =
           '<td><input class="li-item" type="text" placeholder="' + escapeHtml(hint) + '"></td>' +
           '<td><input class="li-qty" type="number" min="0" step="1" placeholder="1"></td>' +
-          '<td><input class="li-unit" type="text" placeholder="night/head"></td>' +
+          '<td><input class="li-unit" type="text" placeholder="' + escapeHtml(midPh || 'night/head') + '"></td>' +
           '<td><input class="li-rate" type="number" min="0" step="0.01" placeholder="0"></td>' +
           '<td class="li-amt">0</td>' +
           '<td><button type="button" class="li-del" title="Remove">x</button></td>';
@@ -1027,14 +1035,18 @@
       function collectProposal() {
         var out = [];
         enabledModules().forEach(function (m) {
+          var isRooms = (m.key === 'rooms');
           var items = [];
           Array.prototype.forEach.call(m.wrap.querySelectorAll('tbody tr'), function (tr) {
             var item = tr.querySelector('.li-item').value.trim();
             var qty = tr.querySelector('.li-qty').value.trim();
-            var unit = tr.querySelector('.li-unit').value.trim();
+            var mid = tr.querySelector('.li-unit').value.trim();
             var rate = tr.querySelector('.li-rate').value.trim();
             if (!item && !qty && !rate) return;
-            items.push({ item: item, qty: qty, unit: unit, rate: rate });
+            // For rooms the middle column captures Occupancy; for others it is the Unit.
+            items.push(isRooms
+              ? { item: item, qty: qty, unit: '', occupancy: mid, rate: rate }
+              : { item: item, qty: qty, unit: mid, occupancy: '', rate: rate });
           });
           if (items.length) out.push({ key: m.key, title: propTitle(m.key), items: items });
         });
@@ -1047,6 +1059,7 @@
           modules: out,
           discountType: $('prop_disctype').value,
           discountValue: $('prop_disc').value,
+          foodMenu: $('prop_foodmenu') ? $('prop_foodmenu').value : '',
           inclusions: gatherChecklist('prop_incl_list', 'prop_incl_custom'),
           exclusions: gatherChecklist('prop_excl_list', 'prop_excl_custom'),
           terms: $('prop_terms').value,

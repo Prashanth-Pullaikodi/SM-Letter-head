@@ -96,7 +96,53 @@ const TEMPLATE_ROLE_RESTRICTIONS = {
 // Proposal document palette (matches the approved cream/copper design).
 var PROP_SLATE = '#39434b', PROP_COPPER = '#b06a3a', PROP_GOLD = '#c9a24b',
     PROP_CREAM = '#f7f3ec', PROP_ZEBRA = '#faf7f2', PROP_LINE = '#e7e0d5',
-    PROP_INK = '#22303c', PROP_MUTED = '#8f897f', PROP_TEXT = '#413d37';
+    PROP_INK = '#22303c', PROP_MUTED = '#8f897f', PROP_TEXT = '#413d37',
+    PROP_BLUE = '#4a6fa5', PROP_GREEN = '#4a7c59', PROP_RED = '#b0553f';
+// 8x8 solid steel-blue PNG, stretched to draw the left spine + signature line.
+var BLUE_BAR_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAFElEQVR4nGP0yl/KgA0wYRUdtBIAFXABbkd7mXUAAAAASUVORK5CYII=';
+
+// Full-height blue spine on the left edge of every page (positioned image in the repeating header).
+function docSpine_(doc, header) {
+  try {
+    var blob = Utilities.newBlob(Utilities.base64Decode(BLUE_BAR_B64), 'image/png', 'spine.png');
+    var body = doc.getBody();
+    var ph = body.getPageHeight();
+    var p = header.getParagraphs()[0] || header.appendParagraph('');
+    var img = p.addPositionedImage(blob);
+    img.setWidth(8).setHeight(Math.round(ph))
+       .setLayout(DocumentApp.PositionedLayout.ABOVE_TEXT)
+       .setLeftOffset(-body.getMarginLeft())
+       .setTopOffset(-body.getMarginTop());
+  } catch (e) { Logger.log('spine: ' + e); }
+}
+
+// Bank-details footer (or company contact if no bank set), repeating on every page.
+function bankFooter_(doc, bank, co) {
+  var footer = doc.addFooter();
+  var parts = [];
+  if (bank) {
+    if (bank.accountName) parts.push('Account Name: ' + bank.accountName);
+    if (bank.name || bank.branch) parts.push('Bank / Branch: ' + [bank.name, bank.branch].filter(String).join(' ,'));
+    if (bank.accountNo) parts.push('Account No.: ' + bank.accountNo);
+    if (bank.ifsc) parts.push('IFSC Code: ' + bank.ifsc);
+    if (bank.swift) parts.push('SWIFT code: ' + bank.swift);
+  }
+  var text = parts.length ? ('BANK DETAILS  ' + parts.join(' | '))
+                          : (co.name + '   |   ' + co.website + '   |   GSTIN: ' + co.gstin);
+  footer.appendParagraph(text).setForegroundColor('#9a9a9a').setFontSize(8)
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+}
+
+// A thin blue signature line (right side) above "Authorised Signatory".
+function signatureLine_(body) {
+  var t = body.appendTable([['', '']]);
+  t.setBorderWidth(0);
+  try { t.setColumnWidth(0, 300); t.setColumnWidth(1, 200); } catch (e) {}
+  t.getCell(0, 0).getChild(0).asParagraph().setFontSize(1);
+  var c = t.getCell(0, 1);
+  c.setBackgroundColor(PROP_BLUE).setPaddingTop(0).setPaddingBottom(0);
+  c.getChild(0).asParagraph().setFontSize(2);
+}
 
 // 7) COMPANY details — used to brand the code-built Proposal (header/footer/GST). Edit freely.
 const COMPANY = {
@@ -280,8 +326,23 @@ function getSettings_() {
     brandColor: raw['brand color'] || COMPANY.brandColor,
     accent: raw['accent color'] || COMPANY.accent
   };
+  // Bank details (shown in the document footer). Returned only if at least one field is set.
+  var bank = null;
+  var bName = raw['bank name'] || raw['bank'];
+  var accNo = raw['account no'] || raw['account number'] || raw['a/c no'];
+  if (bName || accNo || raw['account name'] || raw['ifsc'] || raw['ifsc code']) {
+    bank = {
+      name: bName || '',
+      branch: raw['branch'] || '',
+      accountName: raw['account name'] || raw['account holder'] || '',
+      accountNo: accNo || '',
+      ifsc: raw['ifsc'] || raw['ifsc code'] || '',
+      swift: raw['swift'] || raw['swift code'] || ''
+    };
+  }
   return {
     company: company,
+    bank: bank,
     inclusions: inclusions,
     exclusions: exclusions,
     terms: terms.length ? terms : DEFAULT_TERMS.slice()
@@ -398,11 +459,12 @@ function generateProposal(data) {
         var name = String(it.item || '').trim();
         var qty = num_(it.qty), rate = num_(it.rate);
         var unit = String(it.unit || '').trim();
+        var occupancy = String(it.occupancy || '').trim();
         if (!name && !qty && !rate) return;
         var amt = qty * rate;
         m.subtotal += amt;
         // Rooms/Hall/Amphitheater: slab from the per-unit RATE (per head/night); Food/Other: 18%.
-        m.rows.push({ name: name || 'Item', qty: qty, unit: unit, rate: rate, amt: amt,
+        m.rows.push({ name: name || 'Item', qty: qty, unit: unit, occupancy: occupancy, rate: rate, amt: amt,
                       gstRate: gstRateForItem_(m.key, rate) });
       });
       // Section's representative rate (for any display) = the highest line rate in the section.
@@ -443,8 +505,9 @@ function generateProposal(data) {
       gstGroups: gstGroups, totalCgst: totalCgst, totalSgst: totalSgst, netTaxable: netTaxable, grand: grand
     };
 
-    var client = renderProposalVariant_(data, modules, totals, co, logo, 'client');
-    var internal = renderProposalVariant_(data, modules, totals, co, logo, 'internal');
+    var bank = settings.bank;
+    var client = renderProposalVariant_(data, modules, totals, co, logo, 'client', bank);
+    var internal = renderProposalVariant_(data, modules, totals, co, logo, 'internal', bank);
 
     logGeneration_(user, 'Proposal');
     bumpProposalNo_();
@@ -463,11 +526,11 @@ function generateProposal(data) {
 }
 
 /** Builds one proposal variant (client|internal) as a temp Doc, returns base64 PDF + DOCX. */
-function renderProposalVariant_(data, modules, totals, co, logo, mode) {
+function renderProposalVariant_(data, modules, totals, co, logo, mode, bank) {
   var doc = DocumentApp.create('TEMP_Proposal_' + mode + '_' + Date.now());
   var docId = doc.getId();
   try {
-    buildProposalDoc_(doc, data, modules, totals, co, { mode: mode, logo: logo });
+    buildProposalDoc_(doc, data, modules, totals, co, { mode: mode, logo: logo, bank: bank });
     doc.saveAndClose();
     var pdf = Utilities.base64Encode(DriveApp.getFileById(docId).getAs('application/pdf').getBytes());
     var docx = Utilities.base64Encode(exportDocx_(docId).getBytes());
@@ -541,10 +604,10 @@ function buildProposalDoc_(doc, data, modules, t, co, opts) {
     p.editAsText().setFontSize(8).setBold(false).setForegroundColor(PROP_MUTED).setFontFamily('Arial');
   });
   goldRule_(header);
+  docSpine_(doc, header);   // full-height blue spine on the left edge of every page
 
-  // ---- Footer (repeats every page) ----
-  doc.addFooter().appendParagraph(co.name + '   |   ' + co.website + '   |   GSTIN: ' + co.gstin)
-    .setForegroundColor('#9a9a9a').setFontSize(8).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  // ---- Footer (repeats every page): bank details, else company contact ----
+  bankFooter_(doc, opts.bank, co);
 
   // ---- Internal banner ----
   if (mode === 'internal') {
@@ -594,29 +657,42 @@ function buildProposalDoc_(doc, data, modules, t, co, opts) {
   metaRight('VALID UNTIL', data.validUntil, false);
   body.appendParagraph('').setFontSize(3).setSpacingAfter(2);
 
-  // ---- Warm client intro (client copy only; regular weight, clean sans) ----
+  // ---- Warm client intro (client copy only; italic serif, matching the approved design) ----
   if (mode === 'client') {
     var first = (data.recipientName || 'there');
     body.appendParagraph('Dear ' + first + ',')
-      .setFontFamily('Arial').setFontSize(10.5).setForegroundColor('#333333').setBold(false).setSpacingAfter(3);
+      .setFontFamily('Georgia').setItalic(true).setFontSize(11).setForegroundColor(PROP_SLATE)
+      .setBold(false).setSpacingAfter(3);
     body.appendParagraph(
       'Thank you for thinking of ' + co.name + ' for your celebration — it would be our genuine ' +
       'pleasure to host you and your guests up here in the hills. We have put together the proposal below ' +
       'with your event in mind, arranging every detail so that on the day you can simply arrive, settle in, ' +
       'and enjoy. Do tell us what you would like changed; nothing here is fixed, and we would be glad to ' +
       'shape it around you.')
-      .setFontFamily('Arial').setFontSize(10).setForegroundColor('#444444').setBold(false)
-      .setSpacingAfter(4).setLineSpacing(1.3);
+      .setFontFamily('Georgia').setItalic(true).setFontSize(10).setForegroundColor(PROP_TEXT)
+      .setBold(false).setSpacingAfter(4).setLineSpacing(1.35);
   }
 
   // ---- Service sections (no GST in the heading; slab is applied in the summary) ----
+  // Rooms show an Occupancy column; every other section shows a Unit column.
   modules.forEach(function (m) {
     sectionBar_(body, m.title.toUpperCase(), brand);
-    var rows = [['Description', 'Qty', 'Unit', 'Rate', 'Amount']];
-    m.rows.forEach(function (r) { rows.push([r.name, String(r.qty), r.unit || '', money_(r.rate), money_(r.amt)]); });
+    var isRooms = String(m.key).toLowerCase() === 'rooms';
+    var midLabel = isRooms ? 'Occupancy' : 'Unit';
+    var rows = [['Description', 'Qty', midLabel, 'Rate', 'Amount']];
+    m.rows.forEach(function (r) {
+      var mid = isRooms ? (r.occupancy || '') : (r.unit || '');
+      rows.push([r.name, String(r.qty), mid, money_(r.rate), money_(r.amt)]);
+    });
     rows.push(['Subtotal', '', '', '', money_(m.subtotal)]);
     styleItemsTable_(body.appendTable(rows), brand);
   });
+
+  // ---- Optional day-wise Food Menu (rendered only when provided) ----
+  if (String(data.foodMenu || '').trim()) {
+    sectionBar_(body, 'FOOD MENU — DAY WISE', brand);
+    foodMenuSection_(body, data.foodMenu);
+  }
 
   // ---- Charges summary ----
   sectionBar_(body, 'CHARGES SUMMARY', brand);
@@ -639,23 +715,58 @@ function buildProposalDoc_(doc, data, modules, t, co, opts) {
   body.appendParagraph('GST slab applied:  ' + slabParts.join('    ·    '))
     .setFontFamily('Arial').setFontSize(8).setForegroundColor(PROP_MUTED).setItalic(true).setSpacingBefore(3);
 
-  // ---- Inclusions / Exclusions ----
-  if (String(data.inclusions || '').trim()) { sectionBar_(body, 'INCLUSIONS', brand); addBullets_(body, data.inclusions, '#2e7d32', '✓'); }
-  if (String(data.exclusions || '').trim()) { sectionBar_(body, 'EXCLUSIONS', brand); addBullets_(body, data.exclusions, '#b03535', '✕'); }
+  // ---- Inclusions / Exclusions (green ✓ / red ✗, bold-italic serif) ----
+  if (String(data.inclusions || '').trim()) { sectionBar_(body, 'INCLUSIONS', brand); addBullets_(body, data.inclusions, PROP_GREEN, '✓'); }
+  if (String(data.exclusions || '').trim()) { sectionBar_(body, 'EXCLUSIONS', brand); addBullets_(body, data.exclusions, PROP_RED, '✗'); }
 
-  // ---- Terms ----
+  // ---- Terms (copper numbers, dark text) ----
   if (String(data.terms || '').trim()) {
     sectionBar_(body, 'TERMS & CONDITIONS', brand);
+    var termNo = 0;
     String(data.terms).split('\n').forEach(function (line) {
       line = line.trim(); if (!line) return;
-      body.appendListItem(line).setGlyphType(DocumentApp.GlyphType.NUMBER).setFontSize(8.5).setForegroundColor('#555555');
+      termNo++;
+      var p = body.appendParagraph('');
+      p.appendText(termNo + '.  ').setForegroundColor(PROP_COPPER).setBold(true).setFontFamily('Georgia').setFontSize(9);
+      p.appendText(line).setForegroundColor('#555555').setBold(false).setItalic(false).setFontFamily('Arial').setFontSize(8.5);
+      p.setSpacingAfter(2).setIndentStart(14).setIndentFirstLine(0);
     });
   }
 
-  // ---- Sign-off ----
-  body.appendParagraph('We look forward to hosting you.').setItalic(true).setForegroundColor('#666666').setFontSize(9).setSpacingBefore(14);
-  body.appendParagraph('For ' + co.name).setBold(true).setForegroundColor(brand).setFontFamily('Georgia').setFontSize(11).setSpacingBefore(16);
-  body.appendParagraph('Authorised Signatory').setItalic(true).setForegroundColor('#777777').setFontSize(9);
+  // ---- Sign-off (with a blue signature line above "Authorised Signatory") ----
+  body.appendParagraph('We look forward to hosting you.').setFontFamily('Georgia').setItalic(true).setForegroundColor('#666666').setFontSize(9.5).setSpacingBefore(14);
+  body.appendParagraph('For ' + co.name).setBold(true).setForegroundColor(brand).setFontFamily('Georgia').setFontSize(11).setSpacingBefore(16).setSpacingAfter(2);
+  signatureLine_(body);
+  body.appendParagraph('Authorised Signatory').setItalic(true).setForegroundColor('#777777').setFontSize(9).setFontFamily('Georgia');
+}
+
+/** Renders a day-wise food menu. Lines starting a day ("Day 1", "First Day", "... pax")
+ *  become copper cream bands; other lines become items (bold label before ":"). */
+function foodMenuSection_(body, text) {
+  // A line opens a new day when it contains the word "day" (e.g. "Day 1", "First Day - 150 pax").
+  var isDay = function (s) { return /(^|\s)day\b/i.test(s); };
+  String(text).split('\n').forEach(function (raw) {
+    var line = raw.trim(); if (!line) return;
+    if (isDay(line)) {
+      var band = body.appendTable([['']]);
+      band.setBorderWidth(0);
+      var cell = band.getCell(0, 0);
+      cell.setBackgroundColor(PROP_CREAM).setPaddingTop(4).setPaddingBottom(4).setPaddingLeft(10).setPaddingRight(10);
+      var bp = cell.getChild(0).asParagraph();
+      bp.appendText(line.toUpperCase()).setForegroundColor(PROP_COPPER).setBold(true).setFontFamily('Georgia').setFontSize(10);
+      bp.setSpacingBefore(0).setSpacingAfter(0);
+    } else {
+      var p = body.appendParagraph('');
+      p.setSpacingAfter(1).setSpacingBefore(1).setIndentStart(12);
+      var idx = line.indexOf(':');
+      if (idx > 0 && idx < 28) {
+        p.appendText(line.slice(0, idx + 1) + ' ').setBold(true).setForegroundColor(PROP_INK).setFontFamily('Arial').setFontSize(9);
+        p.appendText(line.slice(idx + 1).trim()).setBold(false).setForegroundColor(PROP_TEXT).setFontFamily('Arial').setFontSize(9);
+      } else {
+        p.appendText(line).setBold(false).setForegroundColor(PROP_TEXT).setFontFamily('Arial').setFontSize(9);
+      }
+    }
+  });
 }
 
 /**
@@ -746,9 +857,10 @@ function styleSummaryTable_(tbl, brand) {
 function addBullets_(body, text, color, mark) {
   String(text).split('\n').forEach(function (line) {
     line = line.trim(); if (!line) return;
-    var p = body.appendParagraph(mark + '   ' + line);
-    p.setFontSize(9).setForegroundColor('#333333').setSpacingAfter(1).setIndentStart(10);
-    try { p.editAsText().setForegroundColor(0, mark.length - 1, color).setBold(0, mark.length - 1, true); } catch (e) {}
+    var p = body.appendParagraph('');
+    p.setSpacingAfter(1).setIndentStart(12).setIndentFirstLine(0);
+    p.appendText(mark + '   ').setForegroundColor(color).setBold(true).setFontFamily('Georgia').setFontSize(10);
+    p.appendText(line).setForegroundColor('#3a3a3a').setBold(false).setItalic(true).setFontFamily('Georgia').setFontSize(9.5);
   });
 }
 
@@ -1111,7 +1223,8 @@ function renderFromBuiltinTemplate_(tpl, fields, fieldList) {
   var doc = DocumentApp.create('TEMP_Letter_' + Date.now());
   var docId = doc.getId();
   try {
-    var co = getSettings_().company;
+    var settings = getSettings_();
+    var co = settings.company;
     var logo = getLogoBlob_();
     var body = doc.getBody();
     body.setMarginTop(96).setMarginBottom(60).setMarginLeft(60).setMarginRight(60);
@@ -1143,10 +1256,15 @@ function renderFromBuiltinTemplate_(tpl, fields, fieldList) {
       p.editAsText().setFontSize(8).setBold(false).setForegroundColor(PROP_MUTED).setFontFamily('Arial');
     });
     goldRule_(header);
+    docSpine_(doc, header);   // full-height blue spine on the left edge of every page
 
-    // --- Footer ---
-    doc.addFooter().appendParagraph(tpl.footer || (co.name + '   |   ' + co.website + '   |   GSTIN: ' + co.gstin))
-      .setForegroundColor('#9a9a9a').setFontSize(8).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    // --- Footer: explicit template footer if set, else bank details / company contact ---
+    if (tpl.footer) {
+      doc.addFooter().appendParagraph(tpl.footer)
+        .setForegroundColor('#9a9a9a').setFontSize(8).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+    } else {
+      bankFooter_(doc, settings.bank, co);
+    }
 
     // --- Body: date, recipient block (non-rich fields), then rich content ---
     body.appendParagraph(
@@ -1650,7 +1768,7 @@ function setup() {
     var st = ss.insertSheet('Settings');
     st.appendRow(['Key', 'Value']);
     st.getRange(1, 1, 1, 2).setFontWeight('bold').setBackground('#1f4d46').setFontColor('#ffffff');
-    st.getRange(2, 1, 20, 2).setValues([
+    st.getRange(2, 1, 26, 2).setValues([
       ['Company Name', COMPANY.name],
       ['Tagline', COMPANY.tagline],
       ['Address', COMPANY.address],
@@ -1660,6 +1778,12 @@ function setup() {
       ['GSTIN', COMPANY.gstin],
       ['Brand Color', COMPANY.brandColor],
       ['Accent Color', COMPANY.accent],
+      ['Bank Name', 'HDFC Bank'],
+      ['Branch', 'Kasaragod'],
+      ['Account Name', COMPANY.name],
+      ['Account No', '50200012345678'],
+      ['IFSC', 'HDFC0001234'],
+      ['SWIFT', 'HDFCINBB'],
       ['Inclusion', 'Complimentary breakfast'],
       ['Inclusion', 'Wi-Fi access'],
       ['Inclusion', 'Car parking'],

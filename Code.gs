@@ -84,7 +84,7 @@ const TEMPLATES = {
 // 2b) BLANK LETTERHEAD TYPES — offered as one-click branded DOCX downloads (empty body to type
 //     into manually in Word). footer: 'bank' -> bank-details footer; 'contact' -> company contact.
 var BLANK_LETTERHEADS = [
-  { key: 'letter',   label: 'Letter',   footer: 'contact' },
+  { key: 'letter',   label: 'Letter',   footer: 'bank' },
   { key: 'invoice',  label: 'Invoice',  footer: 'bank' },
   { key: 'proposal', label: 'Proposal', footer: 'bank' }
 ];

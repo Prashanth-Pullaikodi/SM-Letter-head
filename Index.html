@@ -118,8 +118,9 @@
         <h2>How it works</h2>
         <div class="tips">
           <p><strong>1. Upload your logo once</strong> (top-right). It appears in the header of every letterhead.</p>
-          <p><strong>2. Choose a type</strong> — Letter, Invoice or Proposal. Invoice &amp; Proposal carry the
-            bank-details footer; Letter carries the company contact footer.</p>
+          <p><strong>2. Choose a type</strong> — Letter, Invoice or Proposal. All three carry the same
+            designed header and bank-details footer (falls back to the company contact line if no bank
+            details are set in the Settings sheet).</p>
           <p><strong>3. Open the downloaded <code>.docx</code> in Word</strong> or Google Docs and type your content.
             The header, spine and footer repeat on every page automatically.</p>
         </div>
@@ -135,9 +136,9 @@
       var BLANK_TYPES = [];
 
       var DESC = {
-        letter:   'General letter · company contact footer',
-        invoice:  'Bill / invoice · bank-details footer',
-        proposal: 'Proposal / quotation · bank-details footer'
+        letter:   'General letter · branded header + bank-details footer',
+        invoice:  'Bill / invoice · branded header + bank-details footer',
+        proposal: 'Proposal / quotation · branded header + bank-details footer'
       };
 
       function $(id) { return document.getElementById(id); }

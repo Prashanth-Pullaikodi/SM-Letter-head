@@ -81,6 +81,15 @@ const TEMPLATES = {
 };
 
 
+// 2b) BLANK LETTERHEAD TYPES — offered as one-click branded DOCX downloads (empty body to type
+//     into manually in Word). footer: 'bank' -> bank-details footer; 'contact' -> company contact.
+var BLANK_LETTERHEADS = [
+  { key: 'letter',   label: 'Letter',   footer: 'contact' },
+  { key: 'invoice',  label: 'Invoice',  footer: 'bank' },
+  { key: 'proposal', label: 'Proposal', footer: 'bank' }
+];
+
+
 // 3) Name of the sheet that stores the RBAC user list.
 const USERS_SHEET_NAME = 'Users';
 
@@ -520,6 +529,90 @@ function generateProposal(data) {
       clientPdfName: base + '_Client.pdf', clientDocxName: base + '_Client.docx',
       internalPdfName: base + '_Internal.pdf', internalDocxName: base + '_Internal.docx'
     };
+  } catch (err) {
+    return { ok: false, error: 'Server error: ' + (err && err.message ? err.message : err) };
+  }
+}
+
+/* ============================================================================================
+ *  BLANK LETTERHEAD  ->  DOCX (branded frame, empty body to type into manually)
+ * ============================================================================================ */
+
+/** Builds the branded letterhead frame (header logo/contact, gold rule, blue spine, footer)
+ *  into `doc`, leaving the body empty. opts: { footer:'bank'|'contact', bank } */
+function buildLetterheadFrame_(doc, co, logo, opts) {
+  opts = opts || {};
+  var body = doc.getBody();
+  body.setMarginTop(96).setMarginBottom(60).setMarginLeft(60).setMarginRight(60);
+  var b = {}; b[DocumentApp.Attribute.FONT_FAMILY] = 'Arial'; b[DocumentApp.Attribute.FONT_SIZE] = 10.5;
+  b[DocumentApp.Attribute.FOREGROUND_COLOR] = PROP_TEXT; body.setAttributes(b);
+
+  // Header: logo LEFT, contact RIGHT, gold rule + blue spine (repeats every page).
+  var header = doc.addHeader();
+  var htbl = header.appendTable([['', '']]); htbl.setBorderWidth(0);
+  try { htbl.setColumnWidth(0, 215); htbl.setColumnWidth(1, 300); } catch (e) {}
+  var lc = htbl.getCell(0, 0), rc = htbl.getCell(0, 1);
+  lc.setPaddingTop(2).setPaddingBottom(2).setPaddingLeft(0).setPaddingRight(4);
+  rc.setPaddingTop(2).setPaddingBottom(2).setPaddingLeft(4).setPaddingRight(0);
+  var lp = lc.getChild(0).asParagraph();
+  if (logo) {
+    try {
+      var im = lp.appendInlineImage(logo);
+      var mH = 58, mW = 200, iw = im.getWidth() || mW, ih = im.getHeight() || mH;
+      var sc = mH / ih; if (iw * sc > mW) sc = mW / iw;
+      im.setWidth(Math.round(iw * sc)).setHeight(Math.round(ih * sc));
+    } catch (e) { lp.appendText(co.name).setBold(true).setFontFamily('Georgia').setForegroundColor(PROP_SLATE).setFontSize(16); }
+  } else {
+    lp.appendText(co.name).setBold(true).setFontFamily('Georgia').setForegroundColor(PROP_SLATE).setFontSize(16);
+  }
+  var r0 = rc.getChild(0).asParagraph(); r0.setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+  r0.appendText(co.name).setBold(true).setForegroundColor(PROP_SLATE).setFontSize(10).setFontFamily('Arial');
+  [co.address, 'Mob: ' + co.mobile + '   ·   ' + co.email, co.website + '   ·   GSTIN: ' + co.gstin].forEach(function (line) {
+    var p = rc.appendParagraph(line); p.setAlignment(DocumentApp.HorizontalAlignment.RIGHT).setSpacingBefore(0).setSpacingAfter(0);
+    p.editAsText().setFontSize(8).setBold(false).setForegroundColor(PROP_MUTED).setFontFamily('Arial');
+  });
+  goldRule_(header);
+  docSpine_(doc, header);
+
+  // Footer.
+  if (opts.footer === 'bank') {
+    bankFooter_(doc, opts.bank, co);
+  } else {
+    doc.addFooter().appendParagraph(co.name + '   |   ' + co.website + '   |   GSTIN: ' + co.gstin)
+      .setForegroundColor('#9a9a9a').setFontSize(8).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  }
+
+  // Blank body: a single empty paragraph, ready to type into.
+  body.appendParagraph('');
+}
+
+/** Builds a blank branded letterhead for the given type and returns it as a base64 DOCX. */
+function generateBlankLetterhead(type) {
+  try {
+    var user = getAuthorisedUser_();
+    if (!user) return { ok: false, error: 'Access denied: your account is not authorised.' };
+
+    var def = null;
+    for (var i = 0; i < BLANK_LETTERHEADS.length; i++) {
+      if (BLANK_LETTERHEADS[i].key === type) { def = BLANK_LETTERHEADS[i]; break; }
+    }
+    if (!def) return { ok: false, error: 'Unknown letterhead type.' };
+
+    var settings = getSettings_();
+    var co = settings.company;
+    var logo = getLogoBlob_();
+
+    var doc = DocumentApp.create('TEMP_Blank_' + def.key + '_' + Date.now());
+    var docId = doc.getId();
+    try {
+      buildLetterheadFrame_(doc, co, logo, { footer: def.footer, bank: settings.bank });
+      doc.saveAndClose();
+      var docx = Utilities.base64Encode(exportDocx_(docId).getBytes());
+      logGeneration_(user, 'Blank ' + def.label + ' Letterhead');
+      return { ok: true, docx: docx, docxName: 'SandalMist_' + def.label + '_Letterhead.docx' };
+    } finally {
+      try { DriveApp.getFileById(docId).setTrashed(true); } catch (e) {}
+    }
   } catch (err) {
     return { ok: false, error: 'Server error: ' + (err && err.message ? err.message : err) };
   }
@@ -1012,9 +1105,11 @@ function getSessionInfo() {
   Object.keys(FORMS).forEach(function (k) {
     forms[k] = { label: FORMS[k].label, fields: FORMS[k].fields, custom: FORMS[k].custom || false };
   });
+  var blankTypes = BLANK_LETTERHEADS.map(function (d) { return { key: d.key, label: d.label }; });
   return {
     authorised: true,
     forms: forms,
+    blankTypes: blankTypes,
     name: user.name,
     email: user.email,
     role: user.role,
